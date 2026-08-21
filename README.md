@@ -36,7 +36,7 @@ deepseek_report/
 
 ## 部署到测试环境（宝塔 nginx + PHP）
 
-> 已部署：`https://test-env.example.com/`（PHP 7.4+，实测全通）
+> 已部署到测试环境（宝塔 nginx + PHP 7.4+，实测全通，零数据库）
 
 ### 0. 前置（建站）
 
