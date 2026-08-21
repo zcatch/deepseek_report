@@ -1,0 +1,4 @@
+# 禁止 web 访问敏感文件（token 防泄露，Apache 生效；宝塔 nginx 用默认 deny 隐藏文件规则）
+<FilesMatch "^\.(env|ds_report_token)">
+    Require all denied
+</FilesMatch>

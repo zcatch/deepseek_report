@@ -1,0 +1,15 @@
+# 敏感配置
+.env
+
+# node 依赖
+node_modules/
+
+# IDE 配置
+.idea/
+
+# 部署产物（可从 site/ 重新打包）
+ds-report-deploy.zip
+
+# 系统/编辑器
+Thumbs.db
+.DS_Store
