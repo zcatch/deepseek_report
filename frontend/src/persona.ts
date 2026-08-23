@@ -2,7 +2,7 @@ import type { RankTotal } from "./api";
 
 // 人员画像：四维标签，全部由 rankTotal 现有字段推导，无后端改动
 export type Scale = "重度" | "中度" | "轻度";
-export type ModelPref = "Pro 党" | "Flash 党" | "均衡";
+export type ModelPref = "Pro 党" | "Flash 党" | "混用";
 export type UseMode = "读判型" | "生成型" | "均衡";
 export type Efficiency = "省钱" | "平" | "费";
 
@@ -76,7 +76,7 @@ export function computePersonas(
     let model: ModelPref;
     if (proRatio > 0.66) model = "Pro 党";
     else if (proRatio < 0.33) model = "Flash 党";
-    else model = "均衡";
+    else model = "混用";
 
     let mode: UseMode;
     if (out == null) mode = "均衡";

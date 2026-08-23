@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
+import { NEmpty } from "naive-ui";
 import type { RankTotal } from "../api";
 import type { Persona } from "../persona";
 import ProfileCard from "./ProfileCard.vue";
@@ -53,9 +54,10 @@ const collapsedStyle = computed(() =>
 </script>
 
 <template>
-  <div ref="wallEl" class="wall" :class="{ collapsed: !expanded }" :style="collapsedStyle">
+  <div v-if="rows.length" ref="wallEl" class="wall" :class="{ collapsed: !expanded }" :style="collapsedStyle">
     <ProfileCard v-for="r in rows" :key="r.user" :row="r" :persona="personas.get(r.user)!" @select="emit('select', r.user)" />
   </div>
+  <div v-else class="wall-empty"><n-empty description="暂无人员画像数据" size="small" /></div>
 </template>
 
 <style scoped>
@@ -64,8 +66,29 @@ const collapsedStyle = computed(() =>
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 14px;
 }
+/* 移动端：窄平板/大手机（480~768px）保持两列，避免提前缩成单列 */
+@media (max-width: 768px) {
+  .wall {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+/* 真正的窄屏（≤480px，主流手机竖屏）才单列 */
+@media (max-width: 480px) {
+  .wall {
+    grid-template-columns: 1fr;
+  }
+}
 /* 收起态：首行卡片 hover 不上浮，避免顶部描边被 overflow 裁掉 */
 .wall.collapsed .profile-card:hover {
   transform: none;
+}
+.wall-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: #a0a6b3;
+  font-size: 14px;
 }
 </style>

@@ -19,20 +19,18 @@ status: active
 ## 架构
 
 - **前端**：Vue3 + Vite 构建的纯静态（`site/index.html` + `assets/`），默认加载「今天」实时数据
-- **后端**：`php/usage.php` 单文件——实时直查 DeepSeek API + 聚合，返回与前端一致的 JSON
+- **后端**：`site/api/usage.php` 单文件——实时直查 DeepSeek API + 聚合，返回与前端一致的 JSON
 - 无数据库、无缓存落盘，每次查询都是实时数据
 
 ## 目录结构
 
 ```
 deepseek_report/
-├── site/             # 部署包（前端产物 + api/usage.php + api/.env）
-├── frontend/         # 前端源码（改完需重新构建）
-├── php/usage.php     # 后端源文件（改完需同步到 site/api/usage.php）
-├── core/             # 聚合逻辑 TS（移植来源）
-├── server.ts         # 原 bun 后端（已弃用，仅留档）
-└── config.json       # bun 版遗留（PHP 版配置在 usage.php 顶部常量，改配置直接改那里）
+├── site/             # 唯一部署包（前端产物 + 后端 api/usage.php + api/.env），覆盖上传到宝塔站点根
+└── frontend/         # 前端源码（改完需重新构建，产物合入 site/）
 ```
+
+后端只有 `site/api/usage.php` 一份，改后端直接改它，然后覆盖上传即可。
 
 ## 部署到测试环境（宝塔 nginx + PHP）
 
@@ -131,7 +129,7 @@ curl -s -o /dev/null -w '%{http_code}' 'https://<域名>/api/.env'   # 期望 40
 cd frontend
 bun install      # 需代理：HTTPS_PROXY=http://127.0.0.1:7897
 bun run build    # 产物在 dist/
-# 把 dist/ 内容 + api/ 重新组成 site/ 部署包
+# 把 dist/ 内容（index.html + assets/）覆盖进 site/；api/ 已在 site/ 中，无需动
 ```
 
 > 注意：asset 是根路径引用（`/assets/...`、`/api/usage.php`），**必须部署在域名根**，不能放子目录。

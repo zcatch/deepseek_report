@@ -7,10 +7,10 @@ const emit = defineEmits<{ (e: "refresh"): void }>();
 
 const ITEMS = [
   { id: "kpi", label: "总览" },
-  { id: "scatter", label: "结构分布" },
-  { id: "persona", label: "人员画像" },
-  { id: "trend", label: "每日趋势" },
-  { id: "rank", label: "用量排行" },
+  { id: "scatter", label: "结构" },
+  { id: "persona", label: "画像" },
+  { id: "trend", label: "趋势" },
+  { id: "rank", label: "排行" },
 ];
 
 const activeId = ref("");
@@ -45,18 +45,30 @@ function backTop() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+// 移动端右下角悬浮导航：点开菜单 → 跳区块；点外部关闭
+const fabOpen = ref(false);
+function onNav(item: { id: string }) {
+  goTo(item.id);
+  fabOpen.value = false;
+}
+function onDocClick() {
+  if (fabOpen.value) fabOpen.value = false;
+}
+
 watch(() => props.ready, r => {
   if (r) nextTick(observe);
 });
 
 onMounted(() => {
   window.addEventListener("scroll", onScroll, { passive: true });
+  document.addEventListener("click", onDocClick);
   onScroll();
   if (props.ready) nextTick(observe);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("scroll", onScroll);
+  document.removeEventListener("click", onDocClick);
   observer?.disconnect();
 });
 </script>
@@ -93,9 +105,48 @@ onBeforeUnmount(() => {
       </svg>
     </button>
   </nav>
+
+  <!-- 移动端：右下角悬浮导航，点开菜单跳区块 -->
+  <div class="fab mobile-only">
+    <transition name="fab-pop">
+      <div v-if="fabOpen" class="fab-menu" @click.stop>
+        <button class="fab-item fab-icon-item" title="刷新" @click="emit('refresh'); fabOpen = false">
+          <svg viewBox="0 0 16 16" width="16" height="16">
+            <path d="M13 8a5 5 0 1 1-1.5-3.5M13 2v3h-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div class="fab-divider"></div>
+        <button
+          v-for="item in ITEMS"
+          :key="item.id"
+          class="fab-item"
+          :class="{ active: item.id === activeId }"
+          @click="onNav(item)"
+        >{{ item.label }}</button>
+        <div class="fab-divider"></div>
+        <button class="fab-item fab-icon-item" title="置顶" @click="backTop(); fabOpen = false">
+          <svg viewBox="0 0 16 16" width="16" height="16">
+            <path d="M8 12V4M4 7l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </transition>
+    <button class="fab-btn" title="区块导航" @click.stop="fabOpen = !fabOpen">
+      <svg viewBox="0 0 16 16" width="18" height="18">
+        <circle cx="5" cy="5" r="1.6" fill="currentColor" />
+        <circle cx="11" cy="5" r="1.6" fill="currentColor" />
+        <circle cx="5" cy="11" r="1.6" fill="currentColor" />
+        <circle cx="11" cy="11" r="1.6" fill="currentColor" />
+      </svg>
+    </button>
+  </div>
 </template>
 
 <style scoped>
+/* 移动端 FAB：桌面端默认隐藏，仅 ≤768px 显示 */
+.fab {
+  display: none;
+}
 .side-nav {
   position: fixed;
   right: 18px;
@@ -152,6 +203,96 @@ onBeforeUnmount(() => {
 .back-top.enabled:hover {
   background: rgba(79, 110, 247, 0.08);
   color: #4f6ef7;
+}
+/* 移动端：桌面右侧导航隐藏，改为右下角悬浮导航（FAB 点开菜单跳区块） */
+@media (max-width: 768px) {
+  .side-nav {
+    display: none;
+  }
+  .fab {
+    position: fixed;
+    right: 14px;
+    bottom: 20px;
+    z-index: 700;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+  }
+  .fab-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.62);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow: 0 10px 28px rgba(79, 110, 247, 0.28);
+    color: #4f6ef7;
+    cursor: pointer;
+  }
+  .fab-btn:active {
+    background: rgba(79, 110, 247, 0.12);
+  }
+  .fab-menu {
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(79, 110, 247, 0.18);
+  }
+  .fab-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    color: #525a6e;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .fab-item:active {
+    background: rgba(79, 110, 247, 0.16);
+  }
+  .fab-item.active {
+    color: #4f6ef7;
+    font-weight: 600;
+    background: rgba(79, 110, 247, 0.10);
+  }
+  /* 纯图标操作项（刷新/置顶）：图标居中，与区块项同宽对齐 */
+  .fab-icon-item {
+    justify-content: center;
+    padding: 8px 0;
+  }
+  .fab-ic {
+    flex-shrink: 0;
+    opacity: 0.75;
+  }
+  .fab-divider {
+    height: 1px;
+    margin: 5px 8px;
+    background: rgba(79, 110, 247, 0.14);
+  }
+  .fab-pop-enter-active,
+  .fab-pop-leave-active {
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+  .fab-pop-enter-from,
+  .fab-pop-leave-to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 .nav-dot {
   position: relative;

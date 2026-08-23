@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import * as echarts from "echarts";
+import { NEmpty } from "naive-ui";
 
 const props = defineProps<{ data: any[]; personal?: boolean }>();
 const el = ref<HTMLDivElement>();
@@ -16,6 +17,10 @@ function fmtTokenAxis(v: number): string {
 function render() {
   if (!el.value) return;
   if (!chart) chart = echarts.init(el.value);
+  // 窄屏（手机）用紧凑 grid 与更小的 x 轴标签，避免边距挤占与日期重叠
+  const narrow = el.value.clientWidth < 500;
+  // 显式 axisLabel（始终是对象）：非窄屏也传 fontSize，避免 undefined 导致 x 轴日期标签不渲染
+  const axisLabel = { fontSize: narrow ? 10 : 12 };
 
   // personal 视角只看 token（命中率在个人面板看），团队视角加命中率曲线
   if (props.personal) {
@@ -27,9 +32,10 @@ function render() {
     chart.setOption({
       tooltip: { trigger: "axis" },
       legend: { data: legend, top: 0 },
-      grid: { left: 64, right: 24, top: 40, bottom: 32 },
-      xAxis: { type: "category", boundaryGap: false, data: props.data.map((d: any) => d.day) },
-      yAxis: { type: "value", name: "token", axisLabel: { formatter: fmtTokenAxis }, splitLine: { lineStyle: { type: "dashed" } } },
+      grid: narrow ? { left: 40, right: 10, top: 32, bottom: 22 } : { left: 64, right: 24, top: 40, bottom: 32 },
+      xAxis: { type: "category", boundaryGap: false, data: props.data.map((d: any) => d.day), axisLabel },
+      // 轴不设单位名：单位说明统一放图表底部（chart-foot），避免左右轴名占用/挤占
+      yAxis: { type: "value", axisLabel: { formatter: fmtTokenAxis, ...axisLabel }, splitLine: { lineStyle: { type: "dashed" } } },
       series,
     }, true);
     return;
@@ -56,11 +62,11 @@ function render() {
   chart.setOption({
     tooltip: { trigger: "axis" },
     legend: { data: legend, top: 0 },
-    grid: { left: 64, right: 64, top: 40, bottom: 32 },
-    xAxis: { type: "category", boundaryGap: false, data: props.data.map((d: any) => d.day) },
+    grid: narrow ? { left: 40, right: 20, top: 32, bottom: 22 } : { left: 64, right: 24, top: 40, bottom: 32 },
+    xAxis: { type: "category", boundaryGap: false, data: props.data.map((d: any) => d.day), axisLabel },
     yAxis: [
-      { type: "value", name: "元", splitLine: { lineStyle: { type: "dashed" } } },
-      { type: "value", name: "命中率%", min: 0, max: 100, axisLabel: { formatter: "{value}%" } },
+      { type: "value", splitLine: { lineStyle: { type: "dashed" } } },
+      { type: "value", min: 0, max: 100, axisLabel: { formatter: "{value}%", ...axisLabel } },
     ],
     series,
   }, true);
@@ -85,12 +91,44 @@ watch([() => props.data, () => props.personal], render, { deep: true });
 </script>
 
 <template>
-  <div ref="el" class="chart"></div>
+  <div class="chart-wrap">
+    <div ref="el" class="chart" :class="{ hidden: !props.data.length }"></div>
+    <div v-if="!props.data.length" class="empty"><n-empty :description="props.personal ? '暂无个人趋势数据' : '暂无费用趋势数据'" size="small" /></div>
+    <div v-if="props.data.length" class="chart-foot">
+      {{ props.personal ? "单位：token" : "左轴 = 费用（元）· 右轴 = 命中率%" }}
+    </div>
+  </div>
 </template>
 
 <style scoped>
+.chart-wrap {
+  position: relative;
+}
 .chart {
   height: 340px;
   width: 100%;
+}
+.chart.hidden {
+  visibility: hidden;
+}
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a0a6b3;
+  font-size: 14px;
+}
+.chart-foot {
+  text-align: center;
+  font-size: 11px;
+  color: #a0a6b3;
+  margin-top: 4px;
+}
+@media (max-width: 768px) {
+  .chart {
+    height: 240px;
+  }
 }
 </style>

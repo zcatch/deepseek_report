@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h, ref, onBeforeUnmount } from "vue";
-import { NDataTable, NPopover, type DataTableColumns } from "naive-ui";
+import { NDataTable, NEmpty, NPopover, type DataTableColumns } from "naive-ui";
 import { formatToken, formatInt, formatCost, formatHitRate, hitRateColor, formatPercent, outputRatioColor } from "../format";
 import UserDetail from "./UserDetail.vue";
 
@@ -14,6 +14,14 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: "select", user: string): void }>();
 
 const MEDALS = ["🥇", "🥈", "🥉"];
+
+// 移动端（触屏）无 hover：禁用行气泡 + 表头问号改点击触发
+const isMobile = ref(false);
+function updateIsMobile() {
+  isMobile.value = window.matchMedia("(max-width: 768px)").matches;
+}
+updateIsMobile();
+window.addEventListener("resize", updateIsMobile);
 
 // 受控气泡：整行悬停触发，跟随鼠标（偏移 14px）
 const pop = ref<{ show: boolean; x: number; y: number; user: string | null }>({ show: false, x: 0, y: 0, user: null });
@@ -65,9 +73,9 @@ const cols = computed<DataTableColumns>(() => [
         return v;
       },
     };
-    // 表头问号说明：hover 整个表头文字即弹出（不只问号）
+    // 表头问号说明：hover 整个表头文字即弹出（不只问号）；触屏无 hover → 改点击
     if (c.help) {
-      col.title = () => h(NPopover, { trigger: "hover", placement: "top" }, {
+      col.title = () => h(NPopover, { trigger: isMobile.value ? "click" : "hover", placement: "top" }, {
         trigger: () => h("span", { class: "th-head" }, [
           c.label,
           h("span", { class: "help-icon" }, "?"),
@@ -101,17 +109,17 @@ const rowProps = (row: any) => {
     style: base,
     onClick: () => emit("select", row.user),
     onMouseenter: (e: MouseEvent) => {
-      if (!hasDetail) return;
+      if (isMobile.value || !hasDetail) return;
       clearHide();
       locate(e, row.user);
     },
     onMousemove: (e: MouseEvent) => {
-      if (!hasDetail) return;
+      if (isMobile.value || !hasDetail) return;
       clearHide();
       locate(e, row.user);
     },
     onMouseleave: () => {
-      if (!hasDetail) return;
+      if (isMobile.value || !hasDetail) return;
       scheduleHide(row.user);
     },
   };
@@ -121,15 +129,21 @@ const popDetail = computed(() => (pop.value.user ? props.details?.[pop.value.use
 </script>
 
 <template>
-  <n-data-table
-    :columns="cols"
-    :data="data"
-    :row-key="(r: any) => r.rank"
-    :row-props="rowProps"
-    :bordered="false"
-    size="small"
-    :max-height="520"
-  />
+  <div class="table-scroll">
+    <n-data-table
+      :columns="cols"
+      :data="data"
+      :row-key="(r: any) => r.rank"
+      :row-props="rowProps"
+      :bordered="false"
+      size="small"
+      :max-height="520"
+    >
+      <template #empty>
+        <n-empty description="暂无用量排行数据" size="small" />
+      </template>
+    </n-data-table>
+  </div>
   <n-popover trigger="manual" :show="pop.show" :x="pop.x" :y="pop.y">
     <div class="bubble">
       <UserDetail v-if="popDetail" :detail="popDetail" />
@@ -138,6 +152,16 @@ const popDetail = computed(() => (pop.value.user ? props.details?.[pop.value.use
 </template>
 
 <style scoped>
+/* 移动端：6 列表格横向滚动，避免窄屏挤压 */
+@media (max-width: 768px) {
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  :deep(.n-data-table) {
+    min-width: 560px;
+  }
+}
 :deep(.user-cell) {
   color: #4f6ef7;
   font-weight: 600;
@@ -175,7 +199,7 @@ const popDetail = computed(() => (pop.value.user ? props.details?.[pop.value.use
   font-style: normal;
 }
 :global(.help-desc) {
-  max-width: 260px;
+  max-width: 340px;
   font-size: 12px;
   color: #4a5064;
   line-height: 1.6;

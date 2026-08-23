@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { NPopover } from "naive-ui";
 import type { RankTotal } from "../api";
 import type { Persona } from "../persona";
@@ -10,6 +10,14 @@ const props = defineProps<{ row: RankTotal; persona: Persona }>();
 const emit = defineEmits<{ (e: "select"): void }>();
 
 const initial = computed(() => (props.row.user.trim()[0] ?? "?").toUpperCase());
+
+// 移动端无 hover：禁用 hover 气泡（卡片信息本身已展示成本/命中率）
+const isMobile = ref(false);
+function updateIsMobile() {
+  isMobile.value = window.matchMedia("(max-width: 768px)").matches;
+}
+updateIsMobile();
+window.addEventListener("resize", updateIsMobile);
 
 // 头像渐变按规模分档
 const avatarBg = computed(() => {
@@ -43,7 +51,7 @@ const chips = computed(() => {
 </script>
 
 <template>
-  <n-popover trigger="hover" placement="top" :delay="120">
+  <n-popover trigger="hover" placement="top" :delay="120" :disabled="isMobile">
     <template #trigger>
       <div class="profile-card" @click="emit('select')">
         <div class="pc-head">
@@ -53,7 +61,6 @@ const chips = computed(() => {
             <div class="pc-rank">#{{ row.rank }}</div>
           </div>
         </div>
-        <div class="pc-tagline">{{ persona.tagline }}</div>
         <div class="pc-chips">
           <span v-for="c in chips" :key="c.label" class="chip" :style="{ color: c.color, background: c.color + '1f', borderColor: c.color + '59' }">{{ c.label }}</span>
         </div>
@@ -157,13 +164,6 @@ const chips = computed(() => {
   color: #a0a6b3;
   font-variant-numeric: tabular-nums;
 }
-.pc-tagline {
-  font-size: 13px;
-  font-weight: 600;
-  color: #4a5064;
-  margin-bottom: 10px;
-  letter-spacing: 0.2px;
-}
 .pc-chips {
   display: flex;
   flex-wrap: wrap;
@@ -218,5 +218,37 @@ const chips = computed(() => {
   font-size: 12px;
   color: #4a5064;
   line-height: 1.7;
+}
+/* 移动端：紧凑卡——去掉大雷达图与能量条（点击卡仍进全息面板看完整雷达），收紧间距 */
+@media (max-width: 768px) {
+  .profile-card {
+    padding: 12px;
+  }
+  .pc-radar,
+  .pc-bar {
+    display: none;
+  }
+  .pc-head {
+    margin-bottom: 8px;
+  }
+  .avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
+  .pc-chips {
+    margin-bottom: 8px;
+    gap: 4px;
+  }
+  .chip {
+    font-size: 10px;
+    padding: 3px 7px;
+  }
+  .pc-stats {
+    margin-bottom: 0;
+  }
+  .pc-stat .v {
+    font-size: 15px;
+  }
 }
 </style>

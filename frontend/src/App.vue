@@ -6,7 +6,8 @@ import {
   NConfigProvider,
   NCard,
   NSpin,
-  NAlert,
+  NMessageProvider,
+  type MessageProviderInst,
   NSelect,
   NButton,
   NTabs,
@@ -39,9 +40,8 @@ const themeOverrides = {
   Button: { borderRadiusMedium: "10px" },
 };
 
-const data = ref<UsageData | null>(null);
+const data = ref<UsageData>(emptyUsage("今天"));
 const loading = ref(false);
-const error = ref("");
 const range = ref("今天");
 const model = ref("all");
 const user = ref<string[]>([]);
@@ -51,16 +51,56 @@ const personaExpanded = ref(false);
 const personaHasMore = ref(false);
 const holoUser = ref<string | null>(null);
 
+// 气泡提示：NMessageProvider 实例（API 报错等用，几秒后自动消失）
+const msg = ref<MessageProviderInst | null>(null);
+
+// 空数据结构：区域始终渲染，各图表自行显示空态文案（如"暂无数据"）
+function emptyUsage(r: string): UsageData {
+  return {
+    ok: true,
+    range: r,
+    startIso: "",
+    endIso: "",
+    unit: "",
+    meta: {
+      users: 0,
+      days: 0,
+      totalTokens: 0,
+      proTokens: 0,
+      flashTokens: 0,
+      totalInput: 0,
+      totalOutput: 0,
+      avgTokens: 0,
+      avgPro: 0,
+      avgFlash: 0,
+      estimatedCost: 0,
+      actualCost: 0,
+      proCacheHitRate: null,
+      flashCacheHitRate: null,
+      estLabel: "",
+      actualLabel: "",
+    },
+    rankTotal: [],
+    rankPro: [],
+    rankFlash: [],
+    trend: [],
+    perUser: {},
+  };
+}
+
 async function query(r?: string) {
   const target = (r ?? range.value).trim();
   if (!target) return;
   range.value = target;
   loading.value = true;
-  error.value = "";
   try {
-    data.value = await fetchUsage(target);
+    const j = await fetchUsage(target);
+    // ok=false 也是正常响应（如范围无数据）：用空结构兜底，区域照常渲染，仅气泡提示
+    data.value = j && j.ok ? j : emptyUsage(target);
+    if (j && !j.ok && (j as any).error) msg.value?.error((j as any).error);
   } catch (e: any) {
-    error.value = e.message || "加载失败";
+    data.value = emptyUsage(target);
+    msg.value?.error(e.message || "加载失败");
   } finally {
     loading.value = false;
   }
@@ -76,6 +116,13 @@ function onModelChange(v: string) {
 function onUserChange(v: string[]) {
   user.value = v;
   query();
+}
+
+// 清空筛选：模型/人员回默认，范围回「今天」（RangeBar 已重置自身预设高亮与日期）
+function onReset() {
+  model.value = "all";
+  user.value = [];
+  query("今天");
 }
 
 const userList = computed(() => (data.value ? data.value.rankTotal.map(r => r.user) : []));
@@ -100,19 +147,16 @@ const kpis = computed(() => {
   if (user.value.length === 0) {
     const outRatio = m.totalTokens > 0 ? ((m.totalOutput / m.totalTokens) * 100).toFixed(1) : null;
     return [
-      { label: "用户数", value: String(m.users), desc: "统计范围内有调用记录的人数" },
-      { label: "统计天数", value: String(m.days), desc: "范围内有数据的天数" },
+      // 9 张（3×3）：合并冗余（估算≈实际成本；用户数+天数），删总输入/总输出（输出占比已覆盖）
+      { label: "用户数", value: `${m.users}人 · ${m.days}天`, desc: "统计范围内有调用记录的人数与天数", minor: true },
       { label: "总 Token", value: formatToken(m.totalTokens), desc: "输入 + 输出的 token 总量" },
-      { label: "人均总 Token", value: formatToken(m.avgTokens), desc: "总 Token ÷ 人数" },
-      { label: "Pro Token", value: formatToken(m.proTokens), desc: "V4-Pro 模型的 token 总量" },
-      { label: "Flash Token", value: formatToken(m.flashTokens), desc: "V4-Flash 模型的 token 总量" },
-      { label: "总输入", value: formatToken(m.totalInput), desc: "缓存命中 + 未命中的输入 token" },
-      { label: "总输出", value: formatToken(m.totalOutput), desc: "模型生成内容的输出 token" },
+      { label: "人均 Token", value: formatToken(m.avgTokens), desc: "总 Token ÷ 人数", minor: true },
+      { label: "Pro Token", value: formatToken(m.proTokens), desc: "V4-Pro 模型的 token 总量", minor: true },
+      { label: "Flash Token", value: formatToken(m.flashTokens), desc: "V4-Flash 模型的 token 总量", minor: true },
       { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
-      { label: "估算成本", value: formatCost(m.estimatedCost), color: "#d03050", desc: "按 token 单价估算的费用" },
-      { label: "实际扣费", value: formatCost(m.actualCost), color: "#d03050", desc: "DeepSeek 官方账单实际扣费" },
-      { label: "Pro 缓存命中率", value: m.proCacheHitRate ? m.proCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Pro 缓存命中 ÷ (命中 + 未命中)" },
-      { label: "Flash 缓存命中率", value: m.flashCacheHitRate ? m.flashCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Flash 缓存命中 ÷ (命中 + 未命中)" },
+      { label: "成本", value: formatCost(m.actualCost), color: "#d03050", desc: "实际扣费（估算≈实际）" },
+      { label: "Pro 命中率", value: m.proCacheHitRate ? m.proCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Pro 缓存命中 ÷ (命中 + 未命中)" },
+      { label: "Flash 命中率", value: m.flashCacheHitRate ? m.flashCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Flash 缓存命中 ÷ (命中 + 未命中)" },
     ];
   }
   // 选中视角：这些人合计
@@ -120,7 +164,6 @@ const kpis = computed(() => {
   const total = sumSelected(u => u.total);
   const pro = sumSelected(u => u.pro);
   const flash = sumSelected(u => u.flash);
-  const input = sumSelected(u => u.input);
   const output = sumSelected(u => u.output);
   const cost = sumSelected(u => u.cost);
   const proCh = sumSelected(u => u.proCh);
@@ -131,15 +174,14 @@ const kpis = computed(() => {
   const flashHit = flashCh + flashCm > 0 ? ((flashCh / (flashCh + flashCm)) * 100).toFixed(1) + "%" : "—";
   const outRatio = total > 0 ? ((output / total) * 100).toFixed(1) : null;
   return [
-    { label: "人数", value: String(n), desc: "当前选中的人数" },
+    // 9 张（3×3）：删总输入/总输出（输出占比已覆盖），估算成本并入「成本」
+    { label: "人数", value: String(n), desc: "当前选中的人数", minor: true },
     { label: "总 Token", value: formatToken(total), desc: "选中人员合计 token" },
-    { label: "人均 Token", value: formatToken(n ? Math.round(total / n) : 0), desc: "合计 token ÷ 人数" },
-    { label: "Pro Token", value: formatToken(pro), desc: "选中人员 V4-Pro token" },
-    { label: "Flash Token", value: formatToken(flash), desc: "选中人员 V4-Flash token" },
-    { label: "总输入", value: formatToken(input), desc: "选中人员输入 token 合计" },
-    { label: "总输出", value: formatToken(output), desc: "选中人员输出 token 合计" },
+    { label: "人均 Token", value: formatToken(n ? Math.round(total / n) : 0), desc: "合计 token ÷ 人数", minor: true },
+    { label: "Pro Token", value: formatToken(pro), desc: "选中人员 V4-Pro token", minor: true },
+    { label: "Flash Token", value: formatToken(flash), desc: "选中人员 V4-Flash token", minor: true },
     { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
-    { label: "估算成本", value: formatCost(cost), color: "#d03050", desc: "选中人员估算成本合计" },
+    { label: "成本", value: formatCost(cost), color: "#d03050", desc: "选中人员估算成本合计" },
     { label: "Pro 命中率", value: proHit, color: "#18a058", desc: "选中人员 Pro 缓存命中率" },
     { label: "Flash 命中率", value: flashHit, color: "#18a058", desc: "选中人员 Flash 缓存命中率" },
   ];
@@ -248,11 +290,11 @@ const rankTitle = computed(() => {
 // 卡片标题旁的问号注解（\n 换行）
 const trendHelp = computed(() =>
   user.value.length === 0
-    ? "左轴 = 费用（元）：Pro 估算、Flash 估算、实际扣费三条线\n右轴 = 命中率（虚线）：缓存命中 ÷ (命中 + 未命中) token"
+    ? "左轴 = 费用（元）：Pro 估算、Flash 估算、实际扣费三条线\n右轴 = 命中率：缓存命中 ÷ (命中 + 未命中) token"
     : "Pro / Flash 两条每日 Token 曲线\n个人命中率见下方点击行展开的详情面板"
 );
 const rankHelp = "按总 Token 降序排列，点击表头可切换排序\n命中率 <80% 标红、>95% 标绿\n点击行展开该用户每日趋势";
-const personaHelp = "四维画像：规模（按成本分位）/ 模型偏好 / 使用模式 / 成本效率\n省钱 = 命中率 >95，费 = 命中率 <80\n读判型 = 输出占比 <0.5%，生成型 = 输出占比 >2%\nPro 党 = Pro token 占比 >66%";
+const personaHelp = "四维画像：规模 / 模型偏好 / 使用模式 / 成本效率\n规模：重度（成本前1/3）/ 中度 / 轻度\n模型：Pro 党（Pro>66%）/ Flash 党 / 混用\n模式：读判型（输出<0.5%）/ 生成型（输出>2%）/ 均衡\n效率：省钱（命中>95%）/ 平 / 费（<80%）";
 
 // 画像分档始终按全团队算（避免筛选后单独看某人时标签乱变），展示随筛选过滤
 // 雷达图「活跃」轴需要每人活跃天数 + 统计天数
@@ -311,7 +353,8 @@ const detailMap = computed(() => {
 
 <template>
   <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme-overrides="themeOverrides">
-    <div class="app">
+    <n-message-provider ref="msg">
+      <div class="app">
       <header class="header">
         <div class="title">
           <h1>DeepSeek 用量排行</h1>
@@ -327,17 +370,14 @@ const detailMap = computed(() => {
         @query="query"
         @update:model="onModelChange"
         @update:user="onUserChange"
+        @reset="onReset"
       />
-
-      <n-alert v-if="error" type="error" :bordered="false" style="margin-bottom: 16px">
-        {{ error }}
-      </n-alert>
 
       <n-spin :show="loading">
         <template v-if="data">
           <div class="kpi-grid" id="kpi">
             <div v-for="k in kpis" :key="k.label">
-              <StatCard :label="k.label" :value="k.value" :color="k.color" :desc="k.desc" />
+              <StatCard :label="k.label" :value="k.value" :color="k.color" :desc="k.desc" :minor="k.minor" />
             </div>
           </div>
 
@@ -392,12 +432,14 @@ const detailMap = computed(() => {
               :selected-user="selectedUser"
               @select="onSelectUser"
             />
-            <UserTrendPanel
-              v-if="selectedDaily"
-              :user="selectedDaily.user"
-              :daily="selectedDaily.daily"
-              @close="selectedUser = null"
-            />
+            <Teleport to="body">
+              <UserTrendPanel
+                v-if="selectedDaily"
+                :user="selectedDaily.user"
+                :daily="selectedDaily.daily"
+                @close="selectedUser = null"
+              />
+            </Teleport>
           </n-card>
         </template>
       </n-spin>
@@ -411,7 +453,24 @@ const detailMap = computed(() => {
       </transition>
 
       <SideNav :ready="!!data" :loading="loading" @refresh="query()" />
-    </div>
+
+      <!-- 移动端：画像墙展开较多时，右下角浮动「收起」按钮（叠在侧导航 FAB 上方） -->
+      <transition name="pcoll">
+        <button
+          v-if="personaExpanded"
+          class="persona-collapse-fab"
+          title="收起人员画像"
+          aria-label="收起人员画像"
+          @click="personaExpanded = false"
+        >
+          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+            <path d="M2 8h6M4.5 5.5L8 8l-3.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M14 8H8M11.5 5.5L8 8l3.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </transition>
+      </div>
+    </n-message-provider>
   </n-config-provider>
 </template>
 
@@ -427,6 +486,12 @@ body {
   max-width: 1800px;
   margin: 0 auto;
   padding: 24px 20px 48px;
+}
+/* 移动端：收窄内边距，底部留出「回顶」悬浮钮空间 */
+@media (max-width: 768px) {
+  .app {
+    padding: 16px 12px 88px;
+  }
 }
 .header {
   margin-bottom: 20px;
@@ -453,6 +518,18 @@ body {
   margin: 2px 0 0;
   font-size: 12px;
   color: #a0a6b3;
+}
+/* 移动端：标题降字号，副标题与说明换行不溢出 */
+@media (max-width: 768px) {
+  .title h1 {
+    font-size: 20px;
+  }
+  .subtitle {
+    font-size: 12px;
+  }
+  .header-note {
+    font-size: 11px;
+  }
 }
 .block {
   --n-color: rgba(255, 255, 255, 0.62);
@@ -511,11 +588,65 @@ body {
   max-width: 280px;
   perspective: 1200px;
 }
+/* 移动端：全息面板固定宽度居中（全宽会太空），超窄屏时让 margin 兜底 */
+@media (max-width: 768px) {
+  .holo-mask {
+    padding: 16px;
+  }
+  .holo-wrap {
+    max-width: 300px;
+    width: 100%;
+  }
+}
+/* 画像墙「收起」浮动按钮：仅移动端显示（桌面端顶部按钮 + 右侧导航已够用，无需浮动钮）。
+   移动端展开画像墙后叠在侧导航 FAB 上方；圆形毛玻璃钮，
+   左右向内收缩箭头（区别于置顶的上箭头） */
+.persona-collapse-fab {
+  display: none;
+  position: fixed;
+  right: 14px;
+  bottom: 76px;
+  z-index: 690;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 10px 28px rgba(79, 110, 247, 0.28);
+  color: #4f6ef7;
+  cursor: pointer;
+}
+.persona-collapse-fab:active {
+  background: rgba(79, 110, 247, 0.12);
+}
+.pcoll-enter-active,
+.pcoll-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.pcoll-enter-from,
+.pcoll-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+/* 移动端：KPI 卡 3 列排 + 画像收起浮动钮显示 */
+@media (max-width: 768px) {
+  .kpi-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .persona-collapse-fab {
+    display: flex;
+  }
 }
 .kpi-grid,
 .block {

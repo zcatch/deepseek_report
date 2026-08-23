@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import * as echarts from "echarts";
+import { NEmpty } from "naive-ui";
 import { formatToken, formatCost } from "../format";
 
 const props = defineProps<{
@@ -28,7 +29,7 @@ const EMPHASIS = {
   label: { show: true, position: "top", formatter: (p: any) => p.name, fontSize: 11, color: "#303133" },
 };
 
-function renderIo() {
+function renderIo(narrow: boolean) {
   if (!el.value) return;
   if (!chart) chart = echarts.init(el.value);
   // 输入/输出值域跨 4 个数量级，用对数轴；log 轴不接受 0，clamp 到 1
@@ -47,9 +48,10 @@ function renderIo() {
         return `${d.name}<br/>输入：${formatToken(input)}<br/>输出：${formatToken(output)}<br/>输出占比：${ratio ? ratio + "%" : "—"}<br/>成本：${formatCost(cost)}`;
       },
     },
-    grid: { left: 96, right: 32, top: 28, bottom: 60 },
-    xAxis: { type: "log", name: "输入 Token", nameLocation: "middle", nameGap: 40, axisLabel: { formatter: (v: number) => fmtAxis(v) }, splitLine: { lineStyle: { type: "dashed" } } },
-    yAxis: { type: "log", name: "输出 Token", nameLocation: "middle", nameGap: 60, axisLabel: { formatter: (v: number) => fmtAxis(v) }, splitLine: { lineStyle: { type: "dashed" } } },
+    grid: narrow ? { left: 44, right: 16, top: 24, bottom: 24 } : { left: 64, right: 24, top: 28, bottom: 32 },
+    // 轴不设单位名：说明统一放图表底部（chart-foot）
+    xAxis: { type: "log", axisLabel: { formatter: (v: number) => fmtAxis(v) }, splitLine: { lineStyle: { type: "dashed" } } },
+    yAxis: { type: "log", axisLabel: { formatter: (v: number) => fmtAxis(v) }, splitLine: { lineStyle: { type: "dashed" } } },
     series: [
       {
         type: "scatter",
@@ -70,7 +72,7 @@ function renderIo() {
   }, true);
 }
 
-function renderHit() {
+function renderHit(narrow: boolean) {
   if (!el.value) return;
   if (!chart) chart = echarts.init(el.value);
   const data = props.points.map(p => ({ name: p.user, value: [p.total, p.hitRate != null ? parseFloat(p.hitRate) : null, p.cost] }));
@@ -84,9 +86,9 @@ function renderHit() {
         return `${d.name}<br/>总 Token：${formatToken(total)}<br/>命中率：${hitRate ?? "—"}%<br/>成本：${formatCost(cost)}`;
       },
     },
-    grid: { left: 80, right: 32, top: 28, bottom: 56 },
-    xAxis: { type: "value", name: "总 Token", nameLocation: "middle", nameGap: 36, axisLabel: { formatter: (v: number) => fmtAxis(v) }, splitLine: { lineStyle: { type: "dashed" } } },
-    yAxis: { type: "value", name: "命中率%", nameLocation: "middle", nameGap: 56, min: 0, max: 100, axisLabel: { formatter: "{value}%" }, splitLine: { lineStyle: { type: "dashed" } } },
+    grid: narrow ? { left: 44, right: 16, top: 24, bottom: 24 } : { left: 64, right: 24, top: 28, bottom: 32 },
+    xAxis: { type: "value", axisLabel: { formatter: (v: number) => fmtAxis(v) }, splitLine: { lineStyle: { type: "dashed" } } },
+    yAxis: { type: "value", min: 0, max: 100, axisLabel: { formatter: "{value}%" }, splitLine: { lineStyle: { type: "dashed" } } },
     series: [
       {
         type: "scatter",
@@ -101,8 +103,9 @@ function renderHit() {
 }
 
 function render() {
-  if (props.mode === "hit") renderHit();
-  else renderIo();
+  const narrow = !!el.value && el.value.clientWidth < 500;
+  if (props.mode === "hit") renderHit(narrow);
+  else renderIo(narrow);
 }
 
 function onResize() { chart?.resize(); }
@@ -120,12 +123,44 @@ watch([() => props.points, () => props.mode], render, { deep: true });
 </script>
 
 <template>
-  <div ref="el" class="chart"></div>
+  <div class="chart-wrap">
+    <div ref="el" class="chart" :class="{ hidden: !props.points.length }"></div>
+    <div v-if="!props.points.length" class="empty"><n-empty description="暂无数据" size="small" /></div>
+    <div v-if="props.points.length" class="chart-foot">
+      {{ props.mode === "hit" ? "横轴 = 总 Token · 纵轴 = 命中率%" : "横轴 = 输入 Token · 纵轴 = 输出 Token" }}
+    </div>
+  </div>
 </template>
 
 <style scoped>
+.chart-wrap {
+  position: relative;
+}
 .chart {
   height: 320px;
   width: 100%;
+}
+.chart.hidden {
+  visibility: hidden;
+}
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a0a6b3;
+  font-size: 14px;
+}
+.chart-foot {
+  text-align: center;
+  font-size: 11px;
+  color: #a0a6b3;
+  margin-top: 4px;
+}
+@media (max-width: 768px) {
+  .chart {
+    height: 260px;
+  }
 }
 </style>

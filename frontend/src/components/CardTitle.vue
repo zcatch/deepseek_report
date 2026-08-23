@@ -43,7 +43,7 @@ defineProps<{ title: string; help?: string }>();
   font-style: normal;
 }
 :global(.help-desc) {
-  max-width: 260px;
+  max-width: 340px;
   font-size: 12px;
   color: #4a5064;
   line-height: 1.6;

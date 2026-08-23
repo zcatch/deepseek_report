@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import * as echarts from "echarts";
-import { NButton } from "naive-ui";
+import { NButton, NEmpty } from "naive-ui";
 import { formatToken, formatCost } from "../format";
 
 const props = defineProps<{
@@ -24,6 +24,13 @@ function fmtAxis(v: number): string {
 function render() {
   if (!el.value) return;
   if (!chart) chart = echarts.init(el.value);
+  const narrow = el.value.clientWidth < 500;
+  const labelSize = narrow ? 10 : 12;
+  // auto 抽稀：数据点多时保留间隔日期，不用 hideOverlap（会全隐藏）
+  const axisLabel = { fontSize: labelSize, interval: "auto" };
+  const grid = narrow
+    ? { left: 40, right: 20, top: 32, bottom: 22 }
+    : { left: 64, right: 24, top: 40, bottom: 32 };
 
   chart.setOption({
     tooltip: {
@@ -36,11 +43,12 @@ function render() {
       },
     },
     legend: { data: ["Pro Token", "Flash Token", "命中率"], top: 0 },
-    grid: { left: 64, right: 64, top: 40, bottom: 32 },
-    xAxis: { type: "category", boundaryGap: false, data: props.daily.map(d => d.day) },
+    grid,
+    xAxis: { type: "category", boundaryGap: false, data: props.daily.map(d => d.day), axisLabel },
     yAxis: [
-      { type: "value", name: "token", axisLabel: { formatter: fmtAxis }, splitLine: { lineStyle: { type: "dashed" } } },
-      { type: "value", name: "命中率%", min: 0, max: 100, axisLabel: { formatter: "{value}%" } },
+      // 轴不设单位名：单位说明统一放图表底部（chart-foot）
+      { type: "value", axisLabel: { formatter: fmtAxis, fontSize: labelSize }, splitLine: { lineStyle: { type: "dashed" } } },
+      { type: "value", min: 0, max: 100, axisLabel: { formatter: "{value}%", fontSize: labelSize } },
     ],
     series: [
       { name: "Pro Token", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.daily.map(d => d.pro), itemStyle: { color: "#5470c6" }, lineStyle: { width: 2 } },
@@ -65,27 +73,60 @@ watch(() => props.daily, render, { deep: true });
 </script>
 
 <template>
+  <div class="drawer-backdrop" @click="emit('close')"></div>
   <div class="panel">
     <div class="panel-head">
       <span class="panel-title">{{ user }} · 每日趋势</span>
-      <span class="panel-sub">token 左轴 · 命中率右轴（虚线）</span>
       <n-button size="tiny" quaternary @click="emit('close')">收起</n-button>
     </div>
-    <div ref="el" class="chart"></div>
+    <div v-if="daily.length" ref="el" class="chart"></div>
+    <div v-else class="empty"><n-empty description="暂无该用户趋势数据" size="small" /></div>
+    <div v-if="daily.length" class="chart-foot">左轴 = token · 右轴 = 命中率%</div>
   </div>
 </template>
 
 <style scoped>
+/* 遮罩：全屏铺满，点遮罩关闭（桌面弹窗 / 移动抽屉共用） */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  background: rgba(15, 18, 35, 0.45);
+}
+/* 桌面端：居中弹窗（z-index 高于遮罩） */
 .panel {
-  margin-top: 16px;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 810;
+  width: min(760px, calc(100vw - 48px));
   padding: 16px;
   background: #fafbfc;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid #ebeef5;
+  box-shadow: 0 8px 32px rgba(79, 110, 247, 0.18);
+}
+/* 移动端：底部抽屉浮层（覆盖桌面居中定位） */
+@media (max-width: 768px) {
+  .panel {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    transform: none;
+    width: auto;
+    max-height: 70vh;
+    overflow: auto;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 32px rgba(79, 110, 247, 0.18);
+    padding-bottom: 24px;
+  }
 }
 .panel-head {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
 }
@@ -94,13 +135,31 @@ watch(() => props.daily, render, { deep: true });
   font-size: 15px;
   color: #303133;
 }
-.panel-sub {
-  font-size: 12px;
-  color: #8a8f99;
-  flex: 1;
-}
 .chart {
   height: 300px;
   width: 100%;
+}
+/* 图表底部单位说明 */
+.chart-foot {
+  text-align: center;
+  font-size: 11px;
+  color: #a0a6b3;
+  margin-top: 4px;
+}
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: #a0a6b3;
+  font-size: 14px;
+}
+@media (max-width: 768px) {
+  .chart {
+    height: 220px;
+  }
+  .empty {
+    height: 220px;
+  }
 }
 </style>

@@ -87,7 +87,5 @@ export interface UsageData {
 
 export async function fetchUsage(range: string): Promise<UsageData> {
   const res = await fetch(`/api/usage.php?range=${encodeURIComponent(range)}`);
-  const j = await res.json();
-  if (!j.ok) throw new Error(j.error || "请求失败");
-  return j;
+  return await res.json();
 }

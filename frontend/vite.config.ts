@@ -1,13 +1,13 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
-// dev 时把 /api 代理到后端；build 后由 server.ts 直接托管 dist
+// dev 时把 /api 代理到本地 PHP 后端（php -S 127.0.0.1:8000 -t site）
 export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:3210",
+      "/api": "http://127.0.0.1:8000",
     },
   },
   build: {
