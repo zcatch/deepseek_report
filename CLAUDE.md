@@ -41,7 +41,7 @@ Vue 3 + Vite + naive-ui + ECharts。`App.vue`（546 行）是唯一的容器，�
 - **模型/人员筛选是客户端过滤**，但 `onModelChange`/`onUserChange` 仍会触发 `query()` 重新请求整份数据（为了转圈反馈）。后端不接收筛选参数。
 - `persona.ts` 的画像分档（重度/轻度、性价比、生成倾向）走**全团队分位**，不随筛选变化——刻意如此，避免只看某人时标签乱跳。
 - 打包产物是根路径引用（`/assets/...`、`/api/usage.php`），**必须部署在域名根，不能放子目录**。
-- dev 联调：`vite.config.ts` 把 `/api` 代理到 `localhost:3210`，但那个端口早已没有服务（原 bun 后端已删）。要本地联调需把 proxy 改指向本地 PHP 站点。
+- dev 联调：由 start 域统一管理——`svc start dsreport` 后台隐藏起双服务（PHP 8000 + Vite 3210），`svc stop dsreport` 停止，`svc status` 看状态。也可用 `start-dev.bat` 一键起（会弹两个可见窗口）。`vite.config.ts` 已把 `/api` 代理到 `127.0.0.1:8000`，联调无需改配置；首次运行前先 `cd frontend && npm install --registry=https://registry.npmmirror.com`。
 
 ## 构建与部署
 

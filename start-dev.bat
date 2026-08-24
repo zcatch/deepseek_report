@@ -5,7 +5,7 @@ cd /d "%~dp0"
 echo ==============================================
 echo  DeepSeek Usage Dashboard - Dev Mode (HMR)
 echo    Backend : http://127.0.0.1:8000
-echo    Frontend: http://localhost:5173
+echo    Frontend: http://localhost:3210
 echo  Close each window to stop its server.
 echo ==============================================
 echo.
