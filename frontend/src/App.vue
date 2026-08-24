@@ -23,6 +23,7 @@ import CardTitle from "./components/CardTitle.vue";
 import ProfileWall from "./components/ProfileWall.vue";
 import HologramPanel from "./components/HologramPanel.vue";
 import SideNav from "./components/SideNav.vue";
+import { useSafeBottom } from "./useSafeBottom";
 import { fetchUsage, type UsageData, type PerUser } from "./api";
 import { formatToken, formatCost, formatPercent, outputRatioColor } from "./format";
 import { computePersonas } from "./persona";
@@ -50,6 +51,9 @@ const selectedUser = ref<string | null>(null);
 const personaExpanded = ref(false);
 const personaHasMore = ref(false);
 const holoUser = ref<string | null>(null);
+
+// 移动端画像墙「收起」悬浮按钮：地址栏动态视口补偿（贴可视区底部）
+const { bottom: collapseBottom } = useSafeBottom(76);
 
 // 气泡提示：NMessageProvider 实例（API 报错等用，几秒后自动消失）
 const msg = ref<MessageProviderInst | null>(null);
@@ -459,6 +463,7 @@ const detailMap = computed(() => {
         <button
           v-if="personaExpanded"
           class="persona-collapse-fab"
+          :style="{ bottom: collapseBottom + 'px' }"
           title="收起人员画像"
           aria-label="收起人员画像"
           @click="personaExpanded = false"
@@ -478,19 +483,18 @@ const detailMap = computed(() => {
 body {
   margin: 0;
   background: linear-gradient(160deg, #eef1fb 0%, #f6f3ff 45%, #e9f4ff 100%);
-  background-attachment: fixed;
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
   color: #303133;
 }
 .app {
   max-width: 1800px;
   margin: 0 auto;
-  padding: 24px 20px 48px;
+  padding: 24px 20px 36px;
 }
 /* 移动端：收窄内边距，底部留出「回顶」悬浮钮空间 */
 @media (max-width: 768px) {
   .app {
-    padding: 16px 12px 88px;
+    padding: 16px 12px 72px;
   }
 }
 .header {
@@ -532,12 +536,10 @@ body {
   }
 }
 .block {
-  --n-color: rgba(255, 255, 255, 0.62);
+  --n-color: rgba(255, 255, 255, 0.92);
   border-radius: 16px;
   margin-bottom: 16px;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.75);
   box-shadow: 0 10px 40px rgba(79, 110, 247, 0.10);
 }
@@ -545,12 +547,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 6px;
   width: 100%;
   gap: 12px;
 }
 /* segment tabs 在 flex 里会被拉伸占满整行，收缩到内容宽度 */
 .card-head .n-tabs {
   width: fit-content;
+  max-width: 100%;
 }
 /* 展开/收起按钮：文字 + 右侧 chevron 图标 */
 .toggle-inner {
@@ -612,9 +617,7 @@ body {
   border-radius: 50%;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.75);
   box-shadow: 0 10px 28px rgba(79, 110, 247, 0.28);
   color: #4f6ef7;

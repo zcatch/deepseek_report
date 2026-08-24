@@ -28,13 +28,11 @@ defineProps<{
 
 <style scoped>
 .stat-card {
-  --n-color: rgba(255, 255, 255, 0.62);
+  --n-color: rgba(255, 255, 255, 0.92);
   position: relative;
   overflow: hidden;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.75);
   box-shadow: 0 6px 24px rgba(79, 110, 247, 0.08);
   transition: transform 0.18s ease, box-shadow 0.18s ease;

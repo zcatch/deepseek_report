@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
+import { useSafeBottom } from "../useSafeBottom";
 
 const props = defineProps<{ ready: boolean; loading?: boolean }>();
 
 const emit = defineEmits<{ (e: "refresh"): void }>();
+
+const { bottom: fabBottom } = useSafeBottom(20);
 
 const ITEMS = [
   { id: "kpi", label: "总览" },
@@ -107,7 +110,7 @@ onBeforeUnmount(() => {
   </nav>
 
   <!-- 移动端：右下角悬浮导航，点开菜单跳区块 -->
-  <div class="fab mobile-only">
+  <div class="fab mobile-only" :style="{ bottom: fabBottom + 'px' }">
     <transition name="fab-pop">
       <div v-if="fabOpen" class="fab-menu" @click.stop>
         <button class="fab-item fab-icon-item" title="刷新" @click="emit('refresh'); fabOpen = false">
@@ -158,9 +161,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   padding: 10px 8px;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.75);
   border-radius: 18px;
   box-shadow: 0 12px 36px rgba(79, 110, 247, 0.15);
@@ -226,9 +227,7 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.62);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: rgba(255, 255, 255, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.75);
     box-shadow: 0 10px 28px rgba(79, 110, 247, 0.28);
     color: #4f6ef7;
@@ -241,9 +240,7 @@ onBeforeUnmount(() => {
     display: flex;
     flex-direction: column;
     padding: 6px;
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: rgba(255, 255, 255, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.75);
     border-radius: 12px;
     box-shadow: 0 12px 32px rgba(79, 110, 247, 0.18);

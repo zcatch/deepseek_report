@@ -170,8 +170,6 @@ function toRangeText([s, e]: [number, number]): string {
   border: 1px solid rgba(79, 110, 247, 0.30);
   border-radius: 8px;
   color: #4f6ef7;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   flex-shrink: 0;
 }
 .reset-btn:hover {
@@ -228,6 +226,9 @@ function toRangeText([s, e]: [number, number]): string {
   .date-input {
     position: relative;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     height: 34px;
     padding: 0 10px;
     font-size: 14px;
