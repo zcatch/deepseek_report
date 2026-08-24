@@ -38,9 +38,9 @@ const flash = computed(() => formatToken(props.row.flash));
 const chips = computed(() => {
   const p = props.persona;
   const scaleColor = p.scale === "重度" ? "#7c5cff" : p.scale === "中度" ? "#4f6ef7" : "#a3b6ff";
-  const modelColor = p.model === "Pro 党" ? "#3e5ce6" : p.model === "Flash 党" ? "#0ea5a0" : "#909399";
-  const modeColor = p.mode === "读判型" ? "#409eff" : p.mode === "生成型" ? "#ff7d00" : "#909399";
-  const effColor = p.eff === "省钱" ? "#18a058" : p.eff === "费" ? "#d03050" : "#f0a020";
+  const modelColor = p.model === "Pro" ? "#3e5ce6" : p.model === "Flash" ? "#0ea5a0" : "#909399";
+  const modeColor = p.mode === "读判" ? "#409eff" : p.mode === "生成" ? "#ff7d00" : "#909399";
+  const effColor = p.eff === "省钱" ? "#18a058" : p.eff === "费钱" ? "#d03050" : "#f0a020";
   return [
     { label: p.scale, color: scaleColor },
     { label: p.model, color: modelColor },

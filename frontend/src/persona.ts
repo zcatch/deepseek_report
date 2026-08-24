@@ -2,9 +2,9 @@ import type { RankTotal } from "./api";
 
 // 人员画像：四维标签，全部由 rankTotal 现有字段推导，无后端改动
 export type Scale = "重度" | "中度" | "轻度";
-export type ModelPref = "Pro 党" | "Flash 党" | "混用";
-export type UseMode = "读判型" | "生成型" | "均衡";
-export type Efficiency = "省钱" | "平" | "费";
+export type ModelPref = "Pro" | "Flash" | "混用";
+export type UseMode = "读判" | "生成" | "均衡";
+export type Efficiency = "省钱" | "持平" | "费钱";
 
 export interface Persona {
   scale: Scale;
@@ -74,21 +74,21 @@ export function computePersonas(
     }
 
     let model: ModelPref;
-    if (proRatio > 0.66) model = "Pro 党";
-    else if (proRatio < 0.33) model = "Flash 党";
+    if (proRatio > 0.66) model = "Pro";
+    else if (proRatio < 0.33) model = "Flash";
     else model = "混用";
 
     let mode: UseMode;
     if (out == null) mode = "均衡";
-    else if (out < 0.5) mode = "读判型";
-    else if (out > 2) mode = "生成型";
+    else if (out < 0.5) mode = "读判";
+    else if (out > 2) mode = "生成";
     else mode = "均衡";
 
     let eff: Efficiency;
-    if (hit == null) eff = "平";
+    if (hit == null) eff = "持平";
     else if (hit > 95) eff = "省钱";
-    else if (hit < 80) eff = "费";
-    else eff = "平";
+    else if (hit < 80) eff = "费钱";
+    else eff = "持平";
 
     const energy = maxCost > 0 ? Math.max(0.05, Math.min(1, r.cost / maxCost)) : 0.05;
     const active = days > 0 && activity ? ((activity.get(r.user) ?? 0) / days) * 100 : 0;

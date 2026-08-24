@@ -32,7 +32,7 @@ export function hitRateColor(v: string | null): string {
   return "#f0a020";
 }
 
-// 输出占比颜色（输出/总 token，实测长尾 0.2%~8%）：<0.5 蓝(读判型)、0.5~2 黄(少量输出)、>2 橙(生成型)、无数据灰
+// 输出占比颜色（输出/总 token，实测长尾 0.2%~8%）：<0.5 蓝(读判)、0.5~2 黄(少量输出)、>2 橙(生成)、无数据灰
 export function outputRatioColor(v: string | null): string {
   if (!v) return "#909399";
   const n = parseFloat(v);
