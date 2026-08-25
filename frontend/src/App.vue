@@ -18,6 +18,7 @@ import RankTable from "./components/RankTable.vue";
 import TrendChart from "./components/TrendChart.vue";
 import ScatterChart from "./components/ScatterChart.vue";
 import UserTrendPanel from "./components/UserTrendPanel.vue";
+import CompareChart from "./components/CompareChart.vue";
 import RangeBar from "./components/RangeBar.vue";
 import CardTitle from "./components/CardTitle.vue";
 import ProfileWall from "./components/ProfileWall.vue";
@@ -45,7 +46,12 @@ const data = ref<UsageData>(emptyUsage("今天"));
 const loading = ref(false);
 const range = ref("今天");
 const model = ref("all");
+// 视角：null = 全员，否则 = 某用户（右上角身份切换器切换，localStorage 记住）
+const viewer = ref<string | null>(null);
+// 全员视角的人员筛选（多选）：KPI 显示选中合计，排行/画像/趋势/散点跟随过滤；个人视角下隐藏
 const user = ref<string[]>([]);
+const viewerOpen = ref(false);
+const VIEWER_KEY = "ds_report_viewer";
 const scatterTab = ref<"io" | "hit">("io");
 const selectedUser = ref<string | null>(null);
 const personaExpanded = ref(false);
@@ -101,9 +107,11 @@ async function query(r?: string) {
     const j = await fetchUsage(target);
     // ok=false 也是正常响应（如范围无数据）：用空结构兜底，区域照常渲染，仅气泡提示
     data.value = j && j.ok ? j : emptyUsage(target);
+    restoreViewer();
     if (j && !j.ok && (j as any).error) msg.value?.error((j as any).error);
   } catch (e: any) {
     data.value = emptyUsage(target);
+    restoreViewer();
     msg.value?.error(e.message || "加载失败");
   } finally {
     loading.value = false;
@@ -112,33 +120,80 @@ async function query(r?: string) {
 
 onMounted(() => query());
 
-// 模型/人员下拉变更：更新筛选并立即重查（转圈反馈）
+// 模型筛选变更：更新并立即重查（转圈反馈）
 function onModelChange(v: string) {
   model.value = v;
   query();
 }
+
+// 人员筛选变更（多选）：更新并立即重查（转圈反馈）
 function onUserChange(v: string[]) {
   user.value = v;
   query();
 }
 
-// 清空筛选：模型/人员回默认，范围回「今天」（RangeBar 已重置自身预设高亮与日期）
+// 清空筛选：范围回「今天」、模型/人员回默认；视角身份不动（右上角切换器单独控制）
 function onReset() {
   model.value = "all";
   user.value = [];
   query("今天");
 }
 
+// 视角持久化：记住上次选的个人/全员，刷新保留；用户不在当前数据里则自动回退全员
+function restoreViewer() {
+  try {
+    const saved = localStorage.getItem(VIEWER_KEY);
+    if (!saved || saved === "all") { viewer.value = null; return; }
+    if (data.value && data.value.perUser[saved]) viewer.value = saved;
+    else { localStorage.removeItem(VIEWER_KEY); viewer.value = null; }
+  } catch {
+    viewer.value = null;
+  }
+}
+function setViewer(v: string | null) {
+  viewer.value = v;
+  viewerOpen.value = false;
+  try {
+    if (v) localStorage.setItem(VIEWER_KEY, v);
+    else localStorage.removeItem(VIEWER_KEY);
+  } catch {}
+}
+
+// 视角下拉菜单定位：fixed + JS 钳制在视口内，窄屏按钮被换行到任意位置都不会溢出屏幕左右
+const viewerMenuStyle = computed(() => {
+  if (!viewerOpen.value) return {};
+  const btn = document.querySelector<HTMLElement>(".viewer-btn");
+  if (!btn) return {};
+  const r = btn.getBoundingClientRect();
+  const w = 200; // 预估菜单宽度，与 CSS box-sizing:border-box 的 width 恒等
+  const pad = 12;
+  // 钳制目标：内容区右缘（减去滚动条宽）再留空隙，菜单永远不盖住右侧滚动条
+  const sb = window.innerWidth - document.documentElement.clientWidth;
+  const maxRight = window.innerWidth - sb - pad;
+  let left = r.left;
+  if (left + w > maxRight) left = Math.max(pad, maxRight - w);
+  return { position: "fixed", left: `${left}px`, top: `${r.bottom + 6}px` };
+});
+
 const userList = computed(() => (data.value ? data.value.rankTotal.map(r => r.user) : []));
 
 const subtitle = computed(() => {
   if (!data.value) return "";
+  if (viewer.value) return `${data.value.range} · ${viewer.value} 的个人视角`;
   const n = user.value.length;
-  const who = n === 0 ? `共 ${data.value.meta.users} 人` : `只看 ${n} 人`;
-  return `${data.value.range} · ${who}`;
+  return `${data.value.range} · ${n === 0 ? `共 ${data.value.meta.users} 人` : `只看 ${n} 人`}`;
 });
 
-// 选中人员的某项指标求和（用于合计视角）
+// 当前视角用户在团队中的名次（个人 KPI「团队排名」卡用）
+const rankOfViewer = computed(() => {
+  if (!viewer.value || !data.value) return null;
+  const r = data.value.rankTotal.find(x => x.user === viewer.value);
+  return r ? r.rank : null;
+});
+// 图表组件只接受非空用户名的字符串（个人视角分支下 viewer 必非空）
+const viewerName = computed(() => viewer.value ?? "");
+
+// 全员视角选中人员的某项指标求和（用于合计视角）
 function sumSelected(fn: (u: PerUser) => number): number {
   const d = data.value;
   if (!d) return 0;
@@ -148,46 +203,67 @@ function sumSelected(fn: (u: PerUser) => number): number {
 const kpis = computed(() => {
   if (!data.value) return [];
   const m = data.value.meta;
-  if (user.value.length === 0) {
-    const outRatio = m.totalTokens > 0 ? ((m.totalOutput / m.totalTokens) * 100).toFixed(1) : null;
+  // 个人视角：9 张换成该用户自己的指标
+  if (viewer.value) {
+    const pu = data.value.perUser[viewer.value];
+    if (!pu) return [];
+    const total = pu.total;
+    const outRatio = total > 0 ? ((pu.output / total) * 100).toFixed(1) : null;
+    const share = m.totalTokens > 0 ? ((total / m.totalTokens) * 100).toFixed(1) : null;
+    const proHit = pu.proCh + pu.proCm > 0 ? ((pu.proCh / (pu.proCh + pu.proCm)) * 100).toFixed(1) : null;
+    const flashHit = pu.flashCh + pu.flashCm > 0 ? ((pu.flashCh / (pu.flashCh + pu.flashCm)) * 100).toFixed(1) : null;
     return [
-      // 9 张（3×3）：合并冗余（估算≈实际成本；用户数+天数），删总输入/总输出（输出占比已覆盖）
-      { label: "用户数", value: `${m.users}人 · ${m.days}天`, desc: "统计范围内有调用记录的人数与天数", minor: true },
-      { label: "总 Token", value: formatToken(m.totalTokens), desc: "输入 + 输出的 token 总量" },
-      { label: "人均 Token", value: formatToken(m.avgTokens), desc: "总 Token ÷ 人数", minor: true },
-      { label: "Pro Token", value: formatToken(m.proTokens), desc: "V4-Pro 模型的 token 总量", minor: true },
-      { label: "Flash Token", value: formatToken(m.flashTokens), desc: "V4-Flash 模型的 token 总量", minor: true },
+      { label: "团队排名", value: rankOfViewer.value ? `#${rankOfViewer.value}` : "—", desc: `按总 Token 排名第 ${rankOfViewer.value ?? "—"} 名`, minor: true },
+      { label: "总 Token", value: formatToken(total), desc: "输入 + 输出的 token 总量" },
+      { label: "占团队", value: share ? share + "%" : "—", desc: "占团队总 token 的比例", minor: true },
+      { label: "Pro Token", value: formatToken(pu.pro), desc: "V4-Pro 模型的 token 量", minor: true },
+      { label: "Flash Token", value: formatToken(pu.flash), desc: "V4-Flash 模型的 token 量", minor: true },
       { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
-      { label: "成本", value: formatCost(m.actualCost), color: "#d03050", desc: "实际扣费（估算≈实际）" },
-      { label: "Pro 命中率", value: m.proCacheHitRate ? m.proCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Pro 缓存命中 ÷ (命中 + 未命中)" },
-      { label: "Flash 命中率", value: m.flashCacheHitRate ? m.flashCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Flash 缓存命中 ÷ (命中 + 未命中)" },
+      { label: "成本", value: formatCost(pu.cost), color: "#d03050", desc: "估算成本合计" },
+      { label: "Pro 命中率", value: proHit ? proHit + "%" : "—", color: "#18a058", desc: "V4-Pro 缓存命中 ÷ (命中 + 未命中)" },
+      { label: "Flash 命中率", value: flashHit ? flashHit + "%" : "—", color: "#18a058", desc: "V4-Flash 缓存命中 ÷ (命中 + 未命中)" },
     ];
   }
-  // 选中视角：这些人合计
+  // 全员视角：选中了人员 → 这些人的合计
   const n = user.value.length;
-  const total = sumSelected(u => u.total);
-  const pro = sumSelected(u => u.pro);
-  const flash = sumSelected(u => u.flash);
-  const output = sumSelected(u => u.output);
-  const cost = sumSelected(u => u.cost);
-  const proCh = sumSelected(u => u.proCh);
-  const proCm = sumSelected(u => u.proCm);
-  const flashCh = sumSelected(u => u.flashCh);
-  const flashCm = sumSelected(u => u.flashCm);
-  const proHit = proCh + proCm > 0 ? ((proCh / (proCh + proCm)) * 100).toFixed(1) + "%" : "—";
-  const flashHit = flashCh + flashCm > 0 ? ((flashCh / (flashCh + flashCm)) * 100).toFixed(1) + "%" : "—";
-  const outRatio = total > 0 ? ((output / total) * 100).toFixed(1) : null;
+  if (n > 0) {
+    const total = sumSelected(u => u.total);
+    const pro = sumSelected(u => u.pro);
+    const flash = sumSelected(u => u.flash);
+    const output = sumSelected(u => u.output);
+    const cost = sumSelected(u => u.cost);
+    const proCh = sumSelected(u => u.proCh);
+    const proCm = sumSelected(u => u.proCm);
+    const flashCh = sumSelected(u => u.flashCh);
+    const flashCm = sumSelected(u => u.flashCm);
+    const proHit = proCh + proCm > 0 ? ((proCh / (proCh + proCm)) * 100).toFixed(1) + "%" : "—";
+    const flashHit = flashCh + flashCm > 0 ? ((flashCh / (flashCh + flashCm)) * 100).toFixed(1) + "%" : "—";
+    const outRatio = total > 0 ? ((output / total) * 100).toFixed(1) : null;
+    return [
+      { label: "人数", value: String(n), desc: "当前选中的人数", minor: true },
+      { label: "总 Token", value: formatToken(total), desc: "选中人员合计 token" },
+      { label: "人均 Token", value: formatToken(n ? Math.round(total / n) : 0), desc: "合计 token ÷ 人数", minor: true },
+      { label: "Pro Token", value: formatToken(pro), desc: "选中人员 V4-Pro token", minor: true },
+      { label: "Flash Token", value: formatToken(flash), desc: "选中人员 V4-Flash token", minor: true },
+      { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
+      { label: "成本", value: formatCost(cost), color: "#d03050", desc: "选中人员估算成本合计" },
+      { label: "Pro 命中率", value: proHit, color: "#18a058", desc: "选中人员 Pro 缓存命中率" },
+      { label: "Flash 命中率", value: flashHit, color: "#18a058", desc: "选中人员 Flash 缓存命中率" },
+    ];
+  }
+  // 全员视角：团队汇总 9 张
+  const outRatio = m.totalTokens > 0 ? ((m.totalOutput / m.totalTokens) * 100).toFixed(1) : null;
   return [
-    // 9 张（3×3）：删总输入/总输出（输出占比已覆盖），估算成本并入「成本」
-    { label: "人数", value: String(n), desc: "当前选中的人数", minor: true },
-    { label: "总 Token", value: formatToken(total), desc: "选中人员合计 token" },
-    { label: "人均 Token", value: formatToken(n ? Math.round(total / n) : 0), desc: "合计 token ÷ 人数", minor: true },
-    { label: "Pro Token", value: formatToken(pro), desc: "选中人员 V4-Pro token", minor: true },
-    { label: "Flash Token", value: formatToken(flash), desc: "选中人员 V4-Flash token", minor: true },
+    // 9 张（3×3）：合并冗余（估算≈实际成本；用户数+天数），删总输入/总输出（输出占比已覆盖）
+    { label: "用户数", value: `${m.users}人 · ${m.days}天`, desc: "统计范围内有调用记录的人数与天数", minor: true },
+    { label: "总 Token", value: formatToken(m.totalTokens), desc: "输入 + 输出的 token 总量" },
+    { label: "人均 Token", value: formatToken(m.avgTokens), desc: "总 Token ÷ 人数", minor: true },
+    { label: "Pro Token", value: formatToken(m.proTokens), desc: "V4-Pro 模型的 token 总量", minor: true },
+    { label: "Flash Token", value: formatToken(m.flashTokens), desc: "V4-Flash 模型的 token 总量", minor: true },
     { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
-    { label: "成本", value: formatCost(cost), color: "#d03050", desc: "选中人员估算成本合计" },
-    { label: "Pro 命中率", value: proHit, color: "#18a058", desc: "选中人员 Pro 缓存命中率" },
-    { label: "Flash 命中率", value: flashHit, color: "#18a058", desc: "选中人员 Flash 缓存命中率" },
+    { label: "成本", value: formatCost(m.actualCost), color: "#d03050", desc: "实际扣费（估算≈实际）" },
+    { label: "Pro 命中率", value: m.proCacheHitRate ? m.proCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Pro 缓存命中 ÷ (命中 + 未命中)" },
+    { label: "Flash 命中率", value: m.flashCacheHitRate ? m.flashCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Flash 缓存命中 ÷ (命中 + 未命中)" },
   ];
 });
 
@@ -233,8 +309,8 @@ function onScatterTabChange(v: string | number | null) {
 
 const scatterPoints = computed(() => {
   if (!data.value) return [];
-  // 跟随人员筛选：未选人时看全部，选中后只看选中的人（与画像墙一致）
-  const rows = user.value.length === 0
+  // 个人视角始终看全团队分布（highlight 高亮当前用户）；全员视角跟随人员筛选
+  const rows = viewer.value || user.value.length === 0
     ? data.value.rankTotal
     : data.value.rankTotal.filter(r => user.value.includes(r.user));
   return rows.map(r => ({ user: r.user, total: r.total, hitRate: r.hitRate, cost: r.cost, input: r.input, output: r.output, outputRatio: r.outputRatio }));
@@ -259,6 +335,10 @@ const selectedDaily = computed(() => {
 
 const trendView = computed(() => {
   if (!data.value) return { data: [], personal: false };
+  if (viewer.value) {
+    const pu = data.value.perUser[viewer.value];
+    return { data: pu?.daily ?? [], personal: true };
+  }
   if (user.value.length === 0) return { data: data.value.trend, personal: false };
   // 合并选中人员的每日 token
   const m = new Map<string, { pro: number; flash: number }>();
@@ -278,6 +358,7 @@ const trendView = computed(() => {
 });
 
 const trendTitle = computed(() => {
+  if (viewer.value) return "每日 Token 趋势";
   const n = user.value.length;
   if (n === 0) return "每日费用趋势";
   if (n === 1) return `${user.value[0]} 每日 Token 趋势`;
@@ -292,12 +373,14 @@ const rankTitle = computed(() => {
 });
 
 // 卡片标题旁的问号注解（\n 换行）
-const trendHelp = computed(() =>
-  user.value.length === 0
-    ? "左轴 = 费用（元）：Pro 估算、Flash 估算、实际扣费三条线\n右轴 = 命中率：缓存命中 ÷ (命中 + 未命中) token"
-    : "Pro / Flash 两条每日 Token 曲线\n个人命中率见下方点击行展开的详情面板"
-);
+const trendHelp = computed(() => {
+  if (viewer.value) return "Pro / Flash 两条每日 Token 曲线，看个人用量走势\n命中率与多维度对比见下方「个人分析」";
+  if (user.value.length === 0) return "左轴 = 费用（元）：Pro 估算、Flash 估算、实际扣费三条线\n右轴 = 命中率：缓存命中 ÷ (命中 + 未命中) token";
+  return "Pro / Flash 两条每日 Token 曲线（选中人员每日合计）\n命中率见下方排行行点击展开的详情面板";
+});
 const rankHelp = "按总 Token 降序排列，点击表头可切换排序\n命中率 <80% 标红、>95% 标绿\n点击行展开该用户每日趋势";
+// 个人分析卡注解（个人视角下 rank 区块替换成两张模型分析卡）
+const personalHelp = "Pro / Flash 各一张卡：该模型维度的 Token、成本、缓存命中率、使用天数，相对团队同模型用户的偏差%\n只用一种模型的用户，另一张卡显示空态";
 const personaHelp = "四维画像：规模 / 模型偏好 / 使用模式 / 成本效率\n规模：重度（成本前1/3）/ 中度 / 轻度\n模型：Pro（Pro>66%）/ Flash / 混用\n模式：读判（输出<0.5%）/ 生成（输出>2%）/ 均衡\n效率：省钱（命中>95%）/ 持平 / 费钱（<80%）\n成本强度：成本 ÷ 全团队最高成本";
 
 // 画像分档始终按全团队算（避免筛选后单独看某人时标签乱变），展示随筛选过滤
@@ -312,6 +395,8 @@ const activityMap = computed(() => {
 const personas = computed(() => computePersonas(data.value?.rankTotal ?? [], activityMap.value, data.value?.meta.days ?? 0));
 const profileRows = computed(() => {
   if (!data.value) return [];
+  // 个人视角聚焦当前用户；全员视角跟随人员筛选
+  if (viewer.value) return data.value.rankTotal.filter(r => r.user === viewer.value);
   if (user.value.length === 0) return data.value.rankTotal;
   const set = new Set(user.value);
   return data.value.rankTotal.filter(r => set.has(r.user));
@@ -364,6 +449,30 @@ const detailMap = computed(() => {
           <h1>DeepSeek 用量排行</h1>
           <span v-if="data" class="subtitle">{{ subtitle }}</span>
         </div>
+        <div v-if="data" class="viewer-wrap">
+          <button class="viewer-btn" :class="{ personal: viewer }" :title="viewer ? '切换视角' : '切换到某人的个人视角'" @click="viewerOpen = !viewerOpen">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+              <circle cx="8" cy="5" r="3" fill="none" stroke="currentColor" stroke-width="1.5" />
+              <path d="M3 13c0-2.5 2.2-3.5 5-3.5s5 1 5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            <span class="viewer-name">{{ viewer ?? "全员" }}</span>
+            <svg class="viewer-caret" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+              <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <div v-if="viewerOpen" class="viewer-mask" @click="viewerOpen = false"></div>
+          <div v-if="viewerOpen" class="viewer-menu" :style="viewerMenuStyle" @click.stop>
+            <button class="viewer-opt" :class="{ active: !viewer }" @click="setViewer(null)">全员视角</button>
+            <div class="viewer-divider" />
+            <button
+              v-for="u in userList"
+              :key="u"
+              class="viewer-opt"
+              :class="{ active: viewer === u }"
+              @click="setViewer(u)"
+            >{{ u }}</button>
+          </div>
+        </div>
         <p class="header-note">数据实时直查 DeepSeek API，统计存在延迟与口径落差，请以官方账单为准</p>
       </header>
 
@@ -371,6 +480,7 @@ const detailMap = computed(() => {
         :users="userList"
         :model="model"
         :user="user"
+        :show-user="!viewer"
         @query="query"
         @update:model="onModelChange"
         @update:user="onUserChange"
@@ -395,7 +505,7 @@ const detailMap = computed(() => {
                 </n-tabs>
               </div>
             </template>
-            <ScatterChart :points="scatterPoints" :mode="scatterTab" />
+            <ScatterChart :points="scatterPoints" :mode="scatterTab" :highlight="viewer ?? undefined" />
           </n-card>
 
           <n-card :bordered="false" class="block" size="small" id="persona">
@@ -423,7 +533,7 @@ const detailMap = computed(() => {
             <TrendChart :data="trendView.data" :personal="trendView.personal" />
           </n-card>
 
-          <n-card :bordered="false" class="block" size="small" id="rank">
+          <n-card v-if="!viewer" :bordered="false" class="block" size="small" id="rank">
             <template #header>
               <div class="card-head">
                 <CardTitle :title="rankTitle" :help="rankHelp" />
@@ -445,6 +555,23 @@ const detailMap = computed(() => {
               />
             </Teleport>
           </n-card>
+
+          <!-- 个人视角：两张图各自独立成卡，直接排在页面上（对齐顶部 KPI 卡风格），中间露出页面背景 -->
+          <div v-else class="pa-block" id="rank">
+            <div class="card-head pa-head">
+              <CardTitle title="个人分析" :help="personalHelp" />
+            </div>
+            <div class="pa-grid">
+              <div class="pa-card">
+                <div class="pa-sub">Pro 分析</div>
+                <CompareChart :user="viewerName" :data="data" model="pro" />
+              </div>
+              <div class="pa-card">
+                <div class="pa-sub">Flash 分析</div>
+                <CompareChart :user="viewerName" :data="data" model="flash" />
+              </div>
+            </div>
+          </div>
         </template>
       </n-spin>
 
@@ -456,7 +583,7 @@ const detailMap = computed(() => {
         </div>
       </transition>
 
-      <SideNav :ready="!!data" :loading="loading" @refresh="query()" />
+      <SideNav :ready="!!data" :loading="loading" :personal="!!viewer" @refresh="query()" />
 
       <!-- 移动端：画像墙展开较多时，右下角浮动「收起」按钮（叠在侧导航 FAB 上方） -->
       <transition name="pcoll">
@@ -498,12 +625,19 @@ body {
   }
 }
 .header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  column-gap: 16px;
+  row-gap: 8px;
   margin-bottom: 20px;
 }
 .title {
   display: flex;
   align-items: baseline;
   gap: 12px;
+  min-width: 0;
 }
 .title h1 {
   margin: 0 0 4px;
@@ -520,6 +654,7 @@ body {
 }
 .header-note {
   margin: 2px 0 0;
+  width: 100%;
   font-size: 12px;
   color: #a0a6b3;
 }
@@ -535,7 +670,134 @@ body {
     font-size: 11px;
   }
 }
-.block {
+/* 右上角身份切换器：毛玻璃蓝底 + 个人态渐变蓝白字，贴合主题 */
+.viewer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4f6ef7;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(79, 110, 247, 0.30);
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(79, 110, 247, 0.12);
+  transition: all 0.2s;
+}
+.viewer-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px rgba(79, 110, 247, 0.20);
+}
+.viewer-btn.personal {
+  color: #fff;
+  background: linear-gradient(135deg, #3e5ce6, #7c5cff);
+  border-color: transparent;
+}
+.viewer-name {
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.viewer-caret {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+/* 身份切换器容器：菜单绝对定位锚点 */
+.viewer-wrap {
+  position: relative;
+}
+/* 透明遮罩：点菜单外任意处关闭（不拦截菜单本身点击） */
+.viewer-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+  background: transparent;
+}
+/* 视角下拉菜单：定位由 viewerMenuStyle 内联（fixed + 视口内钳制），这里只留视觉与尺寸。
+   固定 width + box-sizing:border-box 让总宽恒为 200px，与 JS 的预估值精确一致 */
+.viewer-menu {
+  position: fixed;
+  z-index: 2000;
+  width: 200px;
+  box-sizing: border-box;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid rgba(79, 110, 247, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(79, 110, 247, 0.18);
+}
+.viewer-opt {
+  display: flex;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: #303133;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.viewer-opt:hover {
+  background: rgba(79, 110, 247, 0.08);
+  color: #4f6ef7;
+}
+.viewer-opt.active {
+  background: rgba(79, 110, 247, 0.14);
+  color: #4f6ef7;
+  font-weight: 600;
+}
+.viewer-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(79, 110, 247, 0.14);
+}
+/* 个人分析：不套大卡，两张图各自独立成卡直接排在页面上（对齐顶部 KPI 卡风格）。
+   中间由页面背景自然间隔；minmax(0,1fr) + min-width:0 防 ECharts canvas 内联宽度撑破 grid 列（横向溢出） */
+.pa-block {
+  scroll-margin-top: 16px;
+  margin-bottom: 16px;
+}
+.pa-head {
+  margin-bottom: 12px;
+}
+.pa-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.pa-card {
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 16px;
+  padding: 14px 16px 10px;
+  box-shadow: 0 10px 40px rgba(79, 110, 247, 0.10);
+}
+.pa-sub {
+  font-size: 12px;
+  color: #8a8f99;
+  margin-bottom: 6px;
+}
+@media (max-width: 768px) {
+  .pa-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .viewer-btn {
+    height: 32px;
+    padding: 0 11px;
+    font-size: 12px;
+  }
+}.block {
   --n-color: rgba(255, 255, 255, 0.92);
   border-radius: 16px;
   margin-bottom: 16px;

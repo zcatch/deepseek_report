@@ -7,10 +7,21 @@ import { formatToken, formatCost } from "../format";
 const props = defineProps<{
   points: { user: string; total: number; hitRate: string | null; cost: number; input: number; output: number; outputRatio: string | null }[];
   mode?: "io" | "hit";
+  highlight?: string;
 }>();
 
 const el = ref<HTMLDivElement>();
 let chart: echarts.ECharts | null = null;
+
+// 高亮某用户：主题色 + 白色描边 + 放大 + 光晕（个人视角下在团队里定位他）
+const HIGHLIGHT = {
+  color: "#4f6ef7",
+  borderColor: "#fff",
+  borderWidth: 3,
+  opacity: 1,
+  shadowBlur: 14,
+  shadowColor: "rgba(79, 110, 247, 0.55)",
+};
 
 function fmtAxis(v: number): string {
   const a = Math.abs(v);
@@ -33,7 +44,12 @@ function renderIo(narrow: boolean) {
   if (!el.value) return;
   if (!chart) chart = echarts.init(el.value);
   // 输入/输出值域跨 4 个数量级，用对数轴；log 轴不接受 0，clamp 到 1
-  const data = props.points.map(p => ({ name: p.user, value: [Math.max(p.input, 1), Math.max(p.output, 1), p.cost, p.outputRatio] }));
+  const data = props.points.map(p => ({
+    name: p.user,
+    value: [Math.max(p.input, 1), Math.max(p.output, 1), p.cost, p.outputRatio],
+    itemStyle: p.user === props.highlight ? HIGHLIGHT : undefined,
+    symbolSize: p.user === props.highlight ? 26 : undefined,
+  }));
   const xs = data.map(d => d.value[0]);
   const ys = data.map(d => d.value[1]);
   const minVal = Math.min(...xs, ...ys);
@@ -75,7 +91,12 @@ function renderIo(narrow: boolean) {
 function renderHit(narrow: boolean) {
   if (!el.value) return;
   if (!chart) chart = echarts.init(el.value);
-  const data = props.points.map(p => ({ name: p.user, value: [p.total, p.hitRate != null ? parseFloat(p.hitRate) : null, p.cost] }));
+  const data = props.points.map(p => ({
+    name: p.user,
+    value: [p.total, p.hitRate != null ? parseFloat(p.hitRate) : null, p.cost],
+    itemStyle: p.user === props.highlight ? HIGHLIGHT : undefined,
+    symbolSize: p.user === props.highlight ? 26 : undefined,
+  }));
 
   chart.setOption({
     tooltip: {
@@ -119,7 +140,7 @@ onBeforeUnmount(() => {
   chart?.dispose();
   chart = null;
 });
-watch([() => props.points, () => props.mode], render, { deep: true });
+watch([() => props.points, () => props.mode, () => props.highlight], render, { deep: true });
 </script>
 
 <template>

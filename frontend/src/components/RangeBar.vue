@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, watch, computed } from "vue";
 import { NButton, NButtonGroup, NSelect, NDatePicker } from "naive-ui";
 
 const PRESETS = ["今天", "近7天", "近30天", "本月", "上月"];
 
 const props = defineProps<{
-  users: string[];
   model: string;
-  user: string[];
+  showModel?: boolean;
+  users?: string[];
+  user?: string[];
+  showUser?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -29,7 +31,7 @@ const modelOptions = [
   { label: "V4-Flash", value: "flash" },
 ];
 
-const userOptions = computed(() => props.users.map(u => ({ label: u, value: u })));
+const userOptions = computed(() => (props.users ?? []).map(u => ({ label: u, value: u })));
 
 function onPreset(p: string) {
   active.value = p;
@@ -59,7 +61,7 @@ watch([mobileStart, mobileEnd], ([s, e]) => {
   }
 });
 
-// 清空筛选：范围回默认预设 + 通知父组件重置模型/人员
+// 清空筛选：范围回默认预设 + 通知父组件重置模型（视角身份由右上角切换器单独控制）
 function onReset() {
   active.value = PRESETS[0];
   dateRange.value = null;
@@ -127,6 +129,7 @@ function toRangeText([s, e]: [number, number]): string {
     />
 
     <n-select
+      v-if="showUser !== false && users && users.length"
       :value="user"
       :options="userOptions"
       multiple

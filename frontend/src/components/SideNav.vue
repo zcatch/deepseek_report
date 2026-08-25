@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { useSafeBottom } from "../useSafeBottom";
 
-const props = defineProps<{ ready: boolean; loading?: boolean }>();
+const props = defineProps<{ ready: boolean; loading?: boolean; personal?: boolean }>();
 
 const emit = defineEmits<{ (e: "refresh"): void }>();
 
 const { bottom: fabBottom } = useSafeBottom(20);
 
-const ITEMS = [
+// 个人视角下 rank 区块是「个人分析」两张图，导航文案跟着变
+const ITEMS = computed(() => [
   { id: "kpi", label: "总览" },
   { id: "scatter", label: "结构" },
   { id: "persona", label: "画像" },
   { id: "trend", label: "趋势" },
-  { id: "rank", label: "排行" },
-];
+  { id: "rank", label: props.personal ? "分析" : "排行" },
+]);
 
 const activeId = ref("");
 const showBackTop = ref(false);
@@ -30,7 +31,7 @@ function observe() {
     },
     { rootMargin: "-45% 0px -50% 0px", threshold: 0 },
   );
-  for (const item of ITEMS) {
+  for (const item of ITEMS.value) {
     const el = document.getElementById(item.id);
     if (el) observer.observe(el);
   }
