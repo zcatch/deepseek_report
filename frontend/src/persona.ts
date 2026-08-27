@@ -1,8 +1,8 @@
-import type { RankTotal } from "./api";
+import type { RankTotal, Category } from "./api";
 
 // 人员画像：四维标签，全部由 rankTotal 现有字段推导，无后端改动
 export type Scale = "重度" | "中度" | "轻度";
-export type ModelPref = "Pro" | "Flash" | "混用";
+export type ModelPref = string; // 类别展示名（Pro/Flash/Vision/其他）或 "混用"
 export type UseMode = "读判" | "生成" | "均衡";
 export type Efficiency = "省钱" | "持平" | "费钱";
 
@@ -26,7 +26,8 @@ const clamp100 = (v: number) => Math.max(0, Math.min(100, v));
 export function computePersonas(
   rows: RankTotal[],
   activity?: Map<string, number>,
-  totalDays?: number
+  totalDays?: number,
+  categories?: Category[]
 ): Map<string, Persona> {
   const map = new Map<string, Persona>();
   if (!rows.length) return map;
@@ -63,7 +64,6 @@ export function computePersonas(
   };
 
   for (const r of rows) {
-    const proRatio = r.total > 0 ? r.pro / r.total : 0;
     const out = r.outputRatio != null ? parseFloat(r.outputRatio) : null;
     const hit = r.hitRate != null ? parseFloat(r.hitRate) : null;
 
@@ -73,10 +73,19 @@ export function computePersonas(
       else if (r.cost <= lightTh) scale = "轻度";
     }
 
+    // 模型偏好：占比最高类 > 2/3 标该类展示名，否则混用
     let model: ModelPref;
-    if (proRatio > 0.66) model = "Pro";
-    else if (proRatio < 0.33) model = "Flash";
-    else model = "混用";
+    const models = r.models ?? {};
+    let topKey: string | null = null; let topT = 0; let sumT = 0;
+    for (const [k, v] of Object.entries(models)) {
+      sumT += v.tokens;
+      if (v.tokens > topT) { topT = v.tokens; topKey = k; }
+    }
+    if (sumT > 0 && topKey && topT / sumT > 2 / 3) {
+      model = categories?.find(c => c.key === topKey)?.label ?? topKey;
+    } else {
+      model = "混用";
+    }
 
     let mode: UseMode;
     if (out == null) mode = "均衡";

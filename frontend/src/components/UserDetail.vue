@@ -7,15 +7,12 @@ defineProps<{
     rank: number;
     share: number;
     total: number;
-    pro: number;
-    flash: number;
     input: number;
     output: number;
     outputRatio: string | null;
     cost: number;
     hitRate: string | null;
-    proHitRate: string | null;
-    flashHitRate: string | null;
+    models: { label: string; tokens: number; hitRate: string | null }[];
   };
 }>();
 </script>
@@ -28,15 +25,13 @@ defineProps<{
     </div>
     <div class="ud-row"><span>占全员比例</span><span>{{ detail.share }}%</span></div>
     <div class="ud-row"><span>总 Token</span><span>{{ formatToken(detail.total) }}</span></div>
-    <div class="ud-row"><span>Pro Token</span><span>{{ formatToken(detail.pro) }}</span></div>
-    <div class="ud-row"><span>Flash Token</span><span>{{ formatToken(detail.flash) }}</span></div>
+    <div v-for="mc in detail.models" :key="mc.label" class="ud-row"><span>{{ mc.label }} Token</span><span>{{ formatToken(mc.tokens) }}</span></div>
     <div class="ud-row"><span>输入 Token</span><span>{{ formatToken(detail.input) }}</span></div>
     <div class="ud-row"><span>输出 Token</span><span>{{ formatToken(detail.output) }}</span></div>
     <div class="ud-row"><span>输出占比</span><span :style="{ color: outputRatioColor(detail.outputRatio) }">{{ formatPercent(detail.outputRatio) }}</span></div>
     <div class="ud-row"><span>估算成本</span><span class="ud-cost">{{ formatCost(detail.cost) }}</span></div>
     <div class="ud-row"><span>综合命中率</span><span :style="{ color: hitRateColor(detail.hitRate) }">{{ formatHitRate(detail.hitRate) }}</span></div>
-    <div class="ud-row"><span>Pro 命中率</span><span :style="{ color: hitRateColor(detail.proHitRate) }">{{ formatHitRate(detail.proHitRate) }}</span></div>
-    <div class="ud-row"><span>Flash 命中率</span><span :style="{ color: hitRateColor(detail.flashHitRate) }">{{ formatHitRate(detail.flashHitRate) }}</span></div>
+    <div v-for="mc in detail.models" :key="mc.label" class="ud-row"><span>{{ mc.label }} 命中率</span><span :style="{ color: hitRateColor(mc.hitRate) }">{{ formatHitRate(mc.hitRate) }}</span></div>
   </div>
 </template>
 

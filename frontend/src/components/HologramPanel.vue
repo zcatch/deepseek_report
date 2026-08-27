@@ -6,7 +6,7 @@ import { RADAR_AXES } from "../persona";
 import { formatToken } from "../format";
 
 // 全息投影面板（彩蛋）：点击画像卡展开，数字滚动 + 属性条 + 扫描线
-const props = defineProps<{ row: RankTotal; persona: Persona }>();
+const props = defineProps<{ row: RankTotal; persona: Persona; cats?: { key: string; label: string; color: string }[] }>();
 
 const initial = props.row.user.trim()[0]?.toUpperCase() ?? "?";
 
@@ -74,9 +74,8 @@ const bars = RADAR_AXES.map((label, i) => ({
     </div>
 
     <div class="holo-meta">
-      <span>总量 {{ formatToken(row.total) }}</span>
-      <span>Pro {{ formatToken(row.pro) }}</span>
-      <span>Flash {{ formatToken(row.flash) }}</span>
+      <div class="meta-cell"><span class="meta-k">总量</span><span class="meta-v">{{ formatToken(row.total) }}</span></div>
+      <div v-for="c in cats" :key="c.key" class="meta-cell"><span class="meta-k">{{ c.label }}</span><span class="meta-v">{{ formatToken(row.models[c.key]?.tokens ?? 0) }}</span></div>
     </div>
   </div>
 </template>
@@ -209,14 +208,27 @@ const bars = RADAR_AXES.map((label, i) => ({
   text-align: right;
 }
 .holo-meta {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
   font-size: 11px;
-  white-space: nowrap;
   color: #8fa6e8;
   border-top: 1px solid rgba(124, 92, 255, 0.2);
   padding-top: 14px;
   margin-top: 8px;
+}
+.meta-cell {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+}
+.meta-k {
+  color: #8fa6e8;
+}
+.meta-v {
+  color: #cfe0ff;
+  font-variant-numeric: tabular-nums;
 }
 </style>

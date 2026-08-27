@@ -3,7 +3,7 @@ import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import * as echarts from "echarts";
 import { NEmpty } from "naive-ui";
 
-const props = defineProps<{ data: any[]; personal?: boolean }>();
+const props = defineProps<{ data: any[]; personal?: boolean; cats?: { key: string; label: string; color: string }[] }>();
 const el = ref<HTMLDivElement>();
 let chart: echarts.ECharts | null = null;
 
@@ -22,13 +22,15 @@ function render() {
   // 显式 axisLabel（始终是对象）：非窄屏也传 fontSize，避免 undefined 导致 x 轴日期标签不渲染
   const axisLabel = { fontSize: narrow ? 10 : 12 };
 
+  const catsList = props.cats ?? [];
   // personal 视角只看 token（命中率在个人面板看），团队视角加命中率曲线
   if (props.personal) {
-    const legend = ["Pro Token", "Flash Token"];
-    const series = [
-      { name: "Pro Token", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.data.map((d: any) => d.pro), itemStyle: { color: "#5470c6" }, lineStyle: { width: 2 } },
-      { name: "Flash Token", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.data.map((d: any) => d.flash), itemStyle: { color: "#91cc75" }, lineStyle: { width: 2 } },
-    ];
+    const legend = catsList.map(c => `${c.label} Token`);
+    const series = catsList.map(c => ({
+      name: `${c.label} Token`, type: "line", smooth: true, symbol: "circle", symbolSize: 6,
+      data: props.data.map((d: any) => d.models?.[c.key] ?? 0),
+      itemStyle: { color: c.color }, lineStyle: { width: 2 },
+    }));
     chart.setOption({
       tooltip: { trigger: "axis" },
       legend: { data: legend, top: 0 },
@@ -52,10 +54,9 @@ function render() {
     itemStyle: { color: "#f0a020" },
     lineStyle: { width: 2, type: "dashed" as const },
   };
-  const legend = ["Pro 估算", "Flash 估算", "实际扣费", "命中率"];
+  const legend = [...catsList.map(c => `${c.label} 估算`), "实际扣费", "命中率"];
   const series = [
-    { name: "Pro 估算", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.data.map((d: any) => d.proEst), itemStyle: { color: "#5470c6" }, lineStyle: { width: 2 } },
-    { name: "Flash 估算", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.data.map((d: any) => d.flashEst), itemStyle: { color: "#91cc75" }, lineStyle: { width: 2 } },
+    ...catsList.map(c => ({ name: `${c.label} 估算`, type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.data.map((d: any) => d.est?.[c.key] ?? 0), itemStyle: { color: c.color }, lineStyle: { width: 2 } })),
     { name: "实际扣费", type: "line", smooth: true, symbol: "diamond", symbolSize: 7, data: props.data.map((d: any) => d.actual), itemStyle: { color: "#ee6666" }, lineStyle: { width: 2 } },
     hitSeries,
   ];
@@ -87,7 +88,7 @@ onBeforeUnmount(() => {
   chart = null;
 });
 
-watch([() => props.data, () => props.personal], render, { deep: true });
+watch([() => props.data, () => props.personal, () => props.cats], render, { deep: true });
 </script>
 
 <template>

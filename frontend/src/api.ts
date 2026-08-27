@@ -1,16 +1,41 @@
+// 类别颜色：按 categories 顺序循环取色（加第 N 类自动取第 N 色，超出循环复用）
+export const CATEGORY_COLORS = [
+  "#5470c6", // 蓝
+  "#91cc75", // 绿
+  "#ee6666", // 红
+  "#fac858", // 黄
+  "#73c0de", // 青
+  "#fc8452", // 橙
+  "#9a60b4", // 紫
+  "#ea7ccc", // 粉
+  "#48c9b0", // 青绿
+  "#f7ba2a", // 金
+];
+
+export interface Category {
+  key: string;
+  label: string;
+}
+
+export interface ModelMeta {
+  tokens: number;
+  avg: number;
+  input: number;
+  output: number;
+  cost: number;
+  hitRate: string | null;
+}
+
 export interface RankTotal {
   rank: number;
   user: string;
   total: number;
-  pro: number;
-  flash: number;
   input: number;
   output: number;
   outputRatio: string | null;
   cost: number;
   hitRate: string | null;
-  proHitRate: string | null;
-  flashHitRate: string | null;
+  models: Record<string, { tokens: number; hitRate: string | null }>;
 }
 
 export interface RankModel {
@@ -26,31 +51,31 @@ export interface RankModel {
 
 export interface TrendPoint {
   day: string;
-  proEst: number;
-  flashEst: number;
+  est: Record<string, number>;
   actual: number;
   hitRate: string | null;
 }
 
 export interface PerUserDaily {
   day: string;
-  pro: number;
-  flash: number;
+  models: Record<string, number>;
   cost: number;
   hitRate: string | null;
 }
 
+export interface PerUserModel {
+  tokens: number;
+  ch: number;
+  cm: number;
+  out: number;
+}
+
 export interface PerUser {
   total: number;
-  pro: number;
-  flash: number;
   input: number;
   output: number;
   cost: number;
-  proCh: number;
-  proCm: number;
-  flashCh: number;
-  flashCm: number;
+  models: Record<string, PerUserModel>;
   daily: PerUserDaily[];
 }
 
@@ -60,27 +85,22 @@ export interface UsageData {
   startIso: string;
   endIso: string;
   unit: string;
+  categories: Category[];
   meta: {
     users: number;
     days: number;
     totalTokens: number;
-    proTokens: number;
-    flashTokens: number;
     totalInput: number;
     totalOutput: number;
     avgTokens: number;
-    avgPro: number;
-    avgFlash: number;
     estimatedCost: number;
     actualCost: number;
-    proCacheHitRate: string | null;
-    flashCacheHitRate: string | null;
+    byModel: Record<string, ModelMeta>;
     estLabel: string;
     actualLabel: string;
   };
   rankTotal: RankTotal[];
-  rankPro: RankModel[];
-  rankFlash: RankModel[];
+  rankByModel: Record<string, RankModel[]>;
   trend: TrendPoint[];
   perUser: Record<string, PerUser>;
 }

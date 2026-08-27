@@ -16,13 +16,13 @@ deepseek_report/
 
 - **后端源只有 `site/api/usage.php` 一份**，改后端直接改它。不要再引入第二份副本——之前 `php/usage.php` 与 `site/api/usage.php` 双份维护导致过漂移。
 - **`site/` 是宝塔站点根的 1:1 镜像**，部署就是把它里面的文件覆盖上传。改完前端要重新 build 并合入 `site/`，改完后端 `site/api/usage.php` 本身就在包里，直接上传即可。
-- 配置也在后端文件里：`site/api/usage.php` 顶部的 `DS_TZ` / `$GLOBALS['MODELS']` / `$GLOBALS['COST_UNIT']` 常量，不是外部配置文件。
+- 配置也在后端文件里：`site/api/usage.php` 顶部的 `DS_TZ` / `$GLOBALS['MODEL_MAP']` / `$GLOBALS['MODEL_LABELS']` / `$GLOBALS['COST_UNIT']` 常量，不是外部配置文件。
 
 ## 数据模型的两个反直觉点
 
 **1. 单价 `pr` 是反推出来的。** DeepSeek 的 amount 接口给 token、cost 接口给金额，都按 (用户|模型|天) 分桶。代码把 `pr = 该组 cost ÷ 该组总 token`，于是 `Σ(amt × pr)` 恰好等于该组实际扣费——所以「估算成本」在分组层面等于实际扣费，差额只来自四舍五入。别把 `pr` 当成官方定价表里的单价。
 
-**2. Pro/Flash 是二分，不是双向匹配。** 判定只跑 `isPro()`：模型名（小写）含 `proKeywords` 任一关键词 → Pro，**否则一律归 Flash**。`$GLOBALS['MODELS']['flashKeywords']` 声明了但**从未被读取**——是死配置。新增第三类模型需要改的是判定函数本身，不是加关键词。
+**2. 模型分类是配置驱动的映射表，不是二分。** `$GLOBALS['MODEL_MAP']` 是「类别 → 完整模型名数组」的映射，判定 `categorize()` 精确完整名匹配（忽略大小写/首尾空格），未命中映射的模型归 `other` 类；`$GLOBALS['MODEL_LABELS']` 给每个类别一个展示名。新增第 N 类：只在 `MODEL_MAP` 加一类 + `MODEL_LABELS` 加展示名，后端按 `categories` 数组输出、前端遍历渲染，**前端零改动**。`other` 类在榜单上暴露漏配的模型，补一行模型名即可收敛。⚠ 用关键词/前缀匹配会误配：`deepseek-v4-flash-vision-exp` 同时含 `flash`、且与 `deepseek-v4-flash` 共享前缀，只有精确完整名能正确区分 flash 与 vision。
 
 其他口径：`REQUEST` 字段是请求次数不是 token，被忽略；命中率/输出占比在分母为 0 时返回 `null`，前端渲染成 `—`；日期分桶用 UTC（`gmdate`），查询参数带 `tz=28800` 交给服务端偏移。**DeepSeek 当天用量有约 8 小时滞后**：当天查看任何含「今天」的范围，晚些小时的用量还没进平台、数字会偏少，属平台正常延迟，非代码 bug。
 

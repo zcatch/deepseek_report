@@ -6,6 +6,7 @@ const PRESETS = ["今天", "近7天", "近30天", "本月", "上月"];
 
 const props = defineProps<{
   model: string;
+  cats?: { key: string; label: string; color: string }[];
   showModel?: boolean;
   users?: string[];
   user?: string[];
@@ -25,11 +26,10 @@ const dateRange = ref<any>(null);
 const mobileStart = ref("");
 const mobileEnd = ref("");
 
-const modelOptions = [
+const modelOptions = computed(() => [
   { label: "全部模型", value: "all" },
-  { label: "V4-Pro", value: "pro" },
-  { label: "V4-Flash", value: "flash" },
-];
+  ...(props.cats ?? []).map(c => ({ label: c.label, value: c.key })),
+]);
 
 const userOptions = computed(() => (props.users ?? []).map(u => ({ label: u, value: u })));
 

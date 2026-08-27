@@ -10,7 +10,17 @@ date_default_timezone_set('Asia/Shanghai');
 // ── 配置（与 web/config.json 对齐，部署时可改） ──
 define('DS_API_BASE', 'https://platform.deepseek.com');
 define('DS_TZ', 28800);                                    // UTC+8 偏移秒
-$GLOBALS['MODELS'] = ['proKeywords' => ['pro'], 'flashKeywords' => ['flash']];
+// 模型 → 类别映射表（精确完整名匹配，忽略大小写/首尾空格）。
+// 新增类别：在此加一类 + 下方 MODEL_LABELS 加一个展示名即可，前端自动遍历。
+// 未命中映射的模型归「other」类，前端在「其他」里暴露，补一行模型名即可收敛。
+$GLOBALS['MODEL_MAP'] = [
+  'pro'    => ['deepseek-v4-pro'],
+  'flash'  => ['deepseek-v4-flash'],
+  'vision' => ['deepseek-v4-flash-vision-exp'],
+];
+$GLOBALS['MODEL_LABELS'] = [
+  'pro' => 'Pro', 'flash' => 'Flash', 'vision' => 'Vision', 'other' => '其他',
+];
 $GLOBALS['COST_UNIT'] = 'CNY';
 $GLOBALS['COST_PRECISION'] = 2;
 
@@ -248,10 +258,15 @@ function parse_range($input, $now = null) {
 }
 
 // ── 聚合（等价 core/aggregate.ts） ──
-function isPro($model, $models) {
-  $lm = strtolower((string)$model);
-  foreach ($models['proKeywords'] as $kw) if (strpos($lm, strtolower($kw)) !== false) return true;
-  return false;
+// 精确完整名匹配：模型名（忽略大小写/首尾空格）完全等于映射表里的名才命中，否则归 other
+function categorize($model, $map) {
+  $m = strtolower(trim((string)$model));
+  foreach ($map as $cat => $names) {
+    foreach ($names as $name) {
+      if ($m === strtolower(trim((string)$name))) return $cat;
+    }
+  }
+  return 'other';
 }
 
 function dateRangeFromRows($rows) {
@@ -262,49 +277,32 @@ function dateRangeFromRows($rows) {
   return ['min' => $keys[0] ?? '', 'max' => count($keys) ? $keys[count($keys) - 1] : '', 'days' => count($keys)];
 }
 
-function aggregate($rows, $models) {
+function aggregate($rows, $map) {
   $users = []; $dcM = []; $duL = [];
   foreach ($rows as $r) {
     $n = $r['n']; $d = $r['d']; $m = $r['m']; $ty = $r['ty'];
     $amt = (float)$r['amt']; $pr = (float)$r['pr'];
-    if (!isset($users[$n])) {
-      $users[$n] = ['n' => $n, 'proT' => 0.0, 'flashT' => 0.0, 'proE' => 0.0, 'flashE' => 0.0,
-        'pro' => ['ch' => 0.0, 'cm' => 0.0, 'out' => 0.0], 'flash' => ['ch' => 0.0, 'cm' => 0.0, 'out' => 0.0]];
-    }
-    $pro = isPro($m, $models);
+    $cat = categorize($m, $map);
     $e = $amt * $pr;
     $k = $ty === 'input_cache_hit_tokens' ? 'ch' : ($ty === 'input_cache_miss_tokens' ? 'cm' : 'out');
-    if ($pro) { $users[$n]['proT'] += $amt; $users[$n]['proE'] += $e; $users[$n]['pro'][$k] += $amt; }
-    else { $users[$n]['flashT'] += $amt; $users[$n]['flashE'] += $e; $users[$n]['flash'][$k] += $amt; }
 
-    if (!isset($dcM[$d])) {
-      $dcM[$d] = ['d' => $d, 'proE' => 0.0, 'flashE' => 0.0, 'proT' => 0.0, 'flashT' => 0.0,
-        'proCh' => 0.0, 'proCm' => 0.0, 'flashCh' => 0.0, 'flashCm' => 0.0];
-    }
-    if ($pro) {
-      $dcM[$d]['proE'] += $e; $dcM[$d]['proT'] += $amt;
-      if ($k === 'ch') $dcM[$d]['proCh'] += $amt; elseif ($k === 'cm') $dcM[$d]['proCm'] += $amt;
-    } else {
-      $dcM[$d]['flashE'] += $e; $dcM[$d]['flashT'] += $amt;
-      if ($k === 'ch') $dcM[$d]['flashCh'] += $amt; elseif ($k === 'cm') $dcM[$d]['flashCm'] += $amt;
-    }
-    $duL[] = [
-      'n' => $n, 'd' => $d,
-      'proT' => $pro ? $amt : 0, 'flashT' => $pro ? 0 : $amt,
-      'proE' => $pro ? $e : 0, 'flashE' => $pro ? 0 : $e,
-      'proCh' => $pro && $k === 'ch' ? $amt : 0,
-      'proCm' => $pro && $k === 'cm' ? $amt : 0,
-      'flashCh' => !$pro && $k === 'ch' ? $amt : 0,
-      'flashCm' => !$pro && $k === 'cm' ? $amt : 0,
-    ];
+    if (!isset($users[$n])) $users[$n] = ['n' => $n, 'models' => []];
+    if (!isset($users[$n]['models'][$cat])) $users[$n]['models'][$cat] = ['tokens' => 0.0, 'cost' => 0.0, 'ch' => 0.0, 'cm' => 0.0, 'out' => 0.0];
+    $users[$n]['models'][$cat]['tokens'] += $amt;
+    $users[$n]['models'][$cat]['cost'] += $e;
+    $users[$n]['models'][$cat][$k] += $amt;
+
+    if (!isset($dcM[$d])) $dcM[$d] = ['d' => $d, 'models' => []];
+    if (!isset($dcM[$d]['models'][$cat])) $dcM[$d]['models'][$cat] = ['tokens' => 0.0, 'cost' => 0.0, 'ch' => 0.0, 'cm' => 0.0];
+    $dcM[$d]['models'][$cat]['tokens'] += $amt;
+    $dcM[$d]['models'][$cat]['cost'] += $e;
+    if ($k === 'ch') $dcM[$d]['models'][$cat]['ch'] += $amt;
+    elseif ($k === 'cm') $dcM[$d]['models'][$cat]['cm'] += $amt;
+
+    $duL[] = ['n' => $n, 'd' => $d, 'cat' => $cat, 'tokens' => $amt, 'cost' => $e,
+      'ch' => $k === 'ch' ? $amt : 0.0, 'cm' => $k === 'cm' ? $amt : 0.0];
   }
-  $t = 0.0; $pT = 0.0; $fT = 0.0; $pE = 0.0; $fE = 0.0;
-  foreach ($users as $u) {
-    $t += $u['proT'] + $u['flashT']; $pT += $u['proT']; $fT += $u['flashT'];
-    $pE += $u['proE']; $fE += $u['flashE'];
-  }
-  return ['users' => array_values($users), 'dcM' => $dcM, 'duL' => $duL,
-    't' => $t, 'pT' => $pT, 'fT' => $fT, 'pE' => $pE, 'fE' => $fE, 'tE' => $pE + $fE];
+  return ['users' => array_values($users), 'dcM' => $dcM, 'duL' => $duL];
 }
 
 // ── 组装响应 JSON（等价 server.ts buildJson） ──
@@ -317,90 +315,126 @@ function buildJson($range) {
 
   if (count($amountRows) === 0) throw new Exception("范围「{$range}」无有效用量数据（可能是 API 无数据或 token 失效）");
 
-  $agg = aggregate($amountRows, $GLOBALS['MODELS']);
+  $agg = aggregate($amountRows, $GLOBALS['MODEL_MAP']);
   $dt = dateRangeFromRows($amountRows);
   $n = count($agg['users']); $d = $dt['days'];
-  $apT = (int)round($agg['pT'] / $n); $afT = (int)round($agg['fT'] / $n); $atT = (int)round($agg['t'] / $n);
+  $labels = $GLOBALS['MODEL_LABELS'];
 
-  $rankTotal = [];
-  $tmp = $agg['users'];
-  usort($tmp, function ($a, $b) { return ($b['proT'] + $b['flashT']) - ($a['proT'] + $a['flashT']); });
-  foreach ($tmp as $i => $u) {
-    $total = $u['proT'] + $u['flashT'];
-    $input = $u['pro']['ch'] + $u['pro']['cm'] + $u['flash']['ch'] + $u['flash']['cm'];
-    $output = $u['pro']['out'] + $u['flash']['out'];
-    $rankTotal[] = [
-      'rank' => $i + 1, 'user' => $u['n'], 'total' => $total, 'pro' => $u['proT'], 'flash' => $u['flashT'],
-      'input' => $input, 'output' => $output, 'outputRatio' => outRatio($output, $total),
-      'cost' => round2($u['proE'] + $u['flashE']),
-      'hitRate' => hitRate($u['pro']['ch'] + $u['flash']['ch'], $u['pro']['cm'] + $u['flash']['cm']),
-      'proHitRate' => hitRate($u['pro']['ch'], $u['pro']['cm']),
-      'flashHitRate' => hitRate($u['flash']['ch'], $u['flash']['cm']),
+  // 类别：映射表定义顺序固定；「other」仅在确有未知模型时追加
+  $catKeys = array_keys($GLOBALS['MODEL_MAP']);
+  $hasOther = false;
+  foreach ($agg['users'] as $u) if (isset($u['models']['other'])) { $hasOther = true; break; }
+  if ($hasOther) $catKeys[] = 'other';
+  $categories = [];
+  foreach ($catKeys as $c) $categories[] = ['key' => $c, 'label' => $labels[$c] ?? $c];
+
+  // 分类合计 + 全局合计
+  $byModel = [];
+  foreach ($catKeys as $c) $byModel[$c] = ['tokens' => 0.0, 'input' => 0.0, 'output' => 0.0, 'cost' => 0.0, 'ch' => 0.0, 'cm' => 0.0];
+  $totalTokens = 0.0; $totalInput = 0.0; $totalOutput = 0.0; $totalEst = 0.0;
+  foreach ($agg['users'] as $u) {
+    foreach ($u['models'] as $cat => $mc) {
+      if (!isset($byModel[$cat])) $byModel[$cat] = ['tokens' => 0.0, 'input' => 0.0, 'output' => 0.0, 'cost' => 0.0, 'ch' => 0.0, 'cm' => 0.0];
+      $byModel[$cat]['tokens'] += $mc['tokens'];
+      $byModel[$cat]['input'] += $mc['ch'] + $mc['cm'];
+      $byModel[$cat]['output'] += $mc['out'];
+      $byModel[$cat]['cost'] += $mc['cost'];
+      $byModel[$cat]['ch'] += $mc['ch'];
+      $byModel[$cat]['cm'] += $mc['cm'];
+      $totalTokens += $mc['tokens'];
+      $totalInput += $mc['ch'] + $mc['cm'];
+      $totalOutput += $mc['out'];
+      $totalEst += $mc['cost'];
+    }
+  }
+  $metaByModel = [];
+  foreach ($byModel as $cat => $b) {
+    $metaByModel[$cat] = [
+      'tokens' => $b['tokens'],
+      'avg' => $n > 0 ? (int)round($b['tokens'] / $n) : 0,
+      'input' => $b['input'],
+      'output' => $b['output'],
+      'cost' => round2($b['cost']),
+      'hitRate' => hitRate($b['ch'], $b['cm']),
     ];
   }
 
-  $rankPro = [];
-  $tmpP = array_values(array_filter($agg['users'], function ($u) { return $u['proT'] > 0; }));
-  usort($tmpP, function ($a, $b) { return $b['proT'] - $a['proT']; });
-  foreach ($tmpP as $i => $u) {
-    $rankPro[] = ['rank' => $i + 1, 'user' => $u['n'], 'tokens' => $u['proT'], 'cost' => round2($u['proE']),
-      'cacheHit' => $u['pro']['ch'], 'cacheMiss' => $u['pro']['cm'], 'output' => $u['pro']['out'],
-      'hitRate' => hitRate($u['pro']['ch'], $u['pro']['cm'])];
-  }
-  $rankFlash = [];
-  $tmpF = array_values(array_filter($agg['users'], function ($u) { return $u['flashT'] > 0; }));
-  usort($tmpF, function ($a, $b) { return $b['flashT'] - $a['flashT']; });
-  foreach ($tmpF as $i => $u) {
-    $rankFlash[] = ['rank' => $i + 1, 'user' => $u['n'], 'tokens' => $u['flashT'], 'cost' => round2($u['flashE']),
-      'cacheHit' => $u['flash']['ch'], 'cacheMiss' => $u['flash']['cm'], 'output' => $u['flash']['out'],
-      'hitRate' => hitRate($u['flash']['ch'], $u['flash']['cm'])];
+  // rankTotal：每人一行（跨模型合计 + 分类 token/命中率）
+  $rankTotal = [];
+  $tmp = $agg['users'];
+  usort($tmp, function ($a, $b) {
+    $ta = 0.0; foreach ($a['models'] as $m) $ta += $m['tokens'];
+    $tb = 0.0; foreach ($b['models'] as $m) $tb += $m['tokens'];
+    return $tb - $ta;
+  });
+  foreach ($tmp as $i => $u) {
+    $total = 0.0; $input = 0.0; $output = 0.0; $cost = 0.0; $chSum = 0.0; $cmSum = 0.0; $models = [];
+    foreach ($u['models'] as $cat => $mc) {
+      $total += $mc['tokens'];
+      $input += $mc['ch'] + $mc['cm'];
+      $output += $mc['out'];
+      $cost += $mc['cost'];
+      $chSum += $mc['ch']; $cmSum += $mc['cm'];
+      $models[$cat] = ['tokens' => $mc['tokens'], 'hitRate' => hitRate($mc['ch'], $mc['cm'])];
+    }
+    $rankTotal[] = [
+      'rank' => $i + 1, 'user' => $u['n'], 'total' => $total,
+      'input' => $input, 'output' => $output, 'outputRatio' => outRatio($output, $total),
+      'cost' => round2($cost), 'hitRate' => hitRate($chSum, $cmSum), 'models' => $models,
+    ];
   }
 
+  // rankByModel：每个类别一份排行
+  $rankByModel = [];
+  foreach ($catKeys as $cat) {
+    $rows = array_values(array_filter($agg['users'], function ($u) use ($cat) { return isset($u['models'][$cat]) && $u['models'][$cat]['tokens'] > 0; }));
+    usort($rows, function ($a, $b) use ($cat) { return $b['models'][$cat]['tokens'] - $a['models'][$cat]['tokens']; });
+    $rankByModel[$cat] = [];
+    foreach ($rows as $i => $u) {
+      $mc = $u['models'][$cat];
+      $rankByModel[$cat][] = ['rank' => $i + 1, 'user' => $u['n'], 'tokens' => $mc['tokens'], 'cost' => round2($mc['cost']),
+        'cacheHit' => $mc['ch'], 'cacheMiss' => $mc['cm'], 'output' => $mc['out'],
+        'hitRate' => hitRate($mc['ch'], $mc['cm'])];
+    }
+  }
+
+  // trend：每日实际扣费 + 分类估算
   $cd = [];
   foreach ($costRows as $x) $cd[$x['d']] = ($cd[$x['d']] ?? 0.0) + $x['cost'];
   $trend = [];
   ksort($agg['dcM']);
   foreach ($agg['dcM'] as $day => $dc) {
-    $trend[] = ['day' => fd($day), 'proEst' => round2($dc['proE']), 'flashEst' => round2($dc['flashE']),
-      'actual' => round2($cd[$day] ?? 0.0),
-      'hitRate' => hitRate($dc['proCh'] + $dc['flashCh'], $dc['proCm'] + $dc['flashCm'])];
+    $est = []; $chSum = 0.0; $cmSum = 0.0;
+    foreach ($dc['models'] as $cat => $mc) {
+      $est[$cat] = round2($mc['cost']);
+      $chSum += $mc['ch']; $cmSum += $mc['cm'];
+    }
+    $trend[] = ['day' => fd($day), 'est' => $est, 'actual' => round2($cd[$day] ?? 0.0), 'hitRate' => hitRate($chSum, $cmSum)];
   }
 
-  $tpi = 0.0; $tfi = 0.0; $proChSum = 0.0; $flashChSum = 0.0; $totalOutput = 0.0;
-  foreach ($agg['users'] as $u) {
-    $tpi += $u['pro']['ch'] + $u['pro']['cm'];
-    $tfi += $u['flash']['ch'] + $u['flash']['cm'];
-    $proChSum += $u['pro']['ch'];
-    $flashChSum += $u['flash']['ch'];
-    $totalOutput += $u['pro']['out'] + $u['flash']['out'];
-  }
-  $proHit = $tpi > 0 ? sprintf('%.1f', $proChSum / $tpi * 100) : null;
-  $flashHit = $tfi > 0 ? sprintf('%.1f', $flashChSum / $tfi * 100) : null;
-
+  // perUser：每人分类明细 + 每日明细
   $perUser = [];
   foreach ($agg['users'] as $u) {
-    $perUser[$u['n']] = [
-      'total' => $u['proT'] + $u['flashT'], 'pro' => $u['proT'], 'flash' => $u['flashT'],
-      'input' => $u['pro']['ch'] + $u['pro']['cm'] + $u['flash']['ch'] + $u['flash']['cm'],
-      'output' => $u['pro']['out'] + $u['flash']['out'],
-      'cost' => round2($u['proE'] + $u['flashE']),
-      'proCh' => $u['pro']['ch'], 'proCm' => $u['pro']['cm'],
-      'flashCh' => $u['flash']['ch'], 'flashCm' => $u['flash']['cm'],
-      'daily' => [],
-    ];
+    $total = 0.0; $input = 0.0; $output = 0.0; $cost = 0.0; $models = [];
+    foreach ($u['models'] as $cat => $mc) {
+      $total += $mc['tokens'];
+      $input += $mc['ch'] + $mc['cm'];
+      $output += $mc['out'];
+      $cost += $mc['cost'];
+      $models[$cat] = ['tokens' => $mc['tokens'], 'ch' => $mc['ch'], 'cm' => $mc['cm'], 'out' => $mc['out']];
+    }
+    $perUser[$u['n']] = ['total' => $total, 'input' => $input, 'output' => $output, 'cost' => round2($cost), 'models' => $models, 'daily' => []];
   }
   $dailyAgg = [];
   foreach ($agg['duL'] as $x) {
     $nm = $x['n'];
     if (!isset($dailyAgg[$nm])) $dailyAgg[$nm] = [];
-    if (!isset($dailyAgg[$nm][$x['d']])) {
-      $dailyAgg[$nm][$x['d']] = ['pro' => 0.0, 'flash' => 0.0, 'proCh' => 0.0, 'proCm' => 0.0, 'flashCh' => 0.0, 'flashCm' => 0.0, 'cost' => 0.0];
-    }
+    if (!isset($dailyAgg[$nm][$x['d']])) $dailyAgg[$nm][$x['d']] = ['models' => [], 'ch' => 0.0, 'cm' => 0.0, 'cost' => 0.0];
     $e = &$dailyAgg[$nm][$x['d']];
-    $e['pro'] += $x['proT']; $e['flash'] += $x['flashT'];
-    $e['proCh'] += $x['proCh']; $e['proCm'] += $x['proCm'];
-    $e['flashCh'] += $x['flashCh']; $e['flashCm'] += $x['flashCm'];
-    $e['cost'] += $x['proE'] + $x['flashE'];
+    if (!isset($e['models'][$x['cat']])) $e['models'][$x['cat']] = 0.0;
+    $e['models'][$x['cat']] += $x['tokens'];
+    $e['ch'] += $x['ch']; $e['cm'] += $x['cm'];
+    $e['cost'] += $x['cost'];
     unset($e);
   }
   foreach ($dailyAgg as $name => $dm) {
@@ -408,8 +442,7 @@ function buildJson($range) {
     ksort($dm);
     $daily = [];
     foreach ($dm as $day => $e) {
-      $daily[] = ['day' => fd($day), 'pro' => $e['pro'], 'flash' => $e['flash'], 'cost' => round2($e['cost']),
-        'hitRate' => hitRate($e['proCh'] + $e['flashCh'], $e['proCm'] + $e['flashCm'])];
+      $daily[] = ['day' => fd($day), 'models' => $e['models'], 'cost' => round2($e['cost']), 'hitRate' => hitRate($e['ch'], $e['cm'])];
     }
     $perUser[$name]['daily'] = $daily;
   }
@@ -418,16 +451,16 @@ function buildJson($range) {
     'ok' => true,
     'range' => $r['label'], 'startIso' => $r['startIso'], 'endIso' => $r['endIso'],
     'unit' => $GLOBALS['COST_UNIT'],
+    'categories' => $categories,
     'meta' => [
       'users' => $n, 'days' => $d,
-      'totalTokens' => $agg['t'], 'proTokens' => $agg['pT'], 'flashTokens' => $agg['fT'],
-      'totalInput' => $tpi + $tfi, 'totalOutput' => $totalOutput,
-      'avgTokens' => $atT, 'avgPro' => $apT, 'avgFlash' => $afT,
-      'estimatedCost' => round2($agg['tE']), 'actualCost' => round2($costTotal),
-      'proCacheHitRate' => $proHit, 'flashCacheHitRate' => $flashHit,
-      'estLabel' => cny($agg['tE']), 'actualLabel' => cny($costTotal),
+      'totalTokens' => $totalTokens, 'totalInput' => $totalInput, 'totalOutput' => $totalOutput,
+      'avgTokens' => $n > 0 ? (int)round($totalTokens / $n) : 0,
+      'estimatedCost' => round2($totalEst), 'actualCost' => round2($costTotal),
+      'byModel' => $metaByModel,
+      'estLabel' => cny($totalEst), 'actualLabel' => cny($costTotal),
     ],
-    'rankTotal' => $rankTotal, 'rankPro' => $rankPro, 'rankFlash' => $rankFlash,
+    'rankTotal' => $rankTotal, 'rankByModel' => $rankByModel,
     'trend' => $trend, 'perUser' => $perUser,
   ];
 }

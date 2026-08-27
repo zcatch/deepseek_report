@@ -25,7 +25,7 @@ import ProfileWall from "./components/ProfileWall.vue";
 import HologramPanel from "./components/HologramPanel.vue";
 import SideNav from "./components/SideNav.vue";
 import { useSafeBottom } from "./useSafeBottom";
-import { fetchUsage, type UsageData, type PerUser } from "./api";
+import { fetchUsage, CATEGORY_COLORS, type UsageData, type PerUser } from "./api";
 import { formatToken, formatCost, formatPercent, outputRatioColor } from "./format";
 import { computePersonas } from "./persona";
 
@@ -72,27 +72,22 @@ function emptyUsage(r: string): UsageData {
     startIso: "",
     endIso: "",
     unit: "",
+    categories: [],
     meta: {
       users: 0,
       days: 0,
       totalTokens: 0,
-      proTokens: 0,
-      flashTokens: 0,
       totalInput: 0,
       totalOutput: 0,
       avgTokens: 0,
-      avgPro: 0,
-      avgFlash: 0,
       estimatedCost: 0,
       actualCost: 0,
-      proCacheHitRate: null,
-      flashCacheHitRate: null,
+      byModel: {},
       estLabel: "",
       actualLabel: "",
     },
     rankTotal: [],
-    rankPro: [],
-    rankFlash: [],
+    rankByModel: {},
     trend: [],
     perUser: {},
   };
@@ -177,6 +172,11 @@ const viewerMenuStyle = computed(() => {
 
 const userList = computed(() => (data.value ? data.value.rankTotal.map(r => r.user) : []));
 
+// 类别列表（含颜色）：key + label 来自后端，颜色按顺序循环取色；加新类别零改动
+const cats = computed(() =>
+  (data.value?.categories ?? []).map((c, i) => ({ key: c.key, label: c.label, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }))
+);
+
 const subtitle = computed(() => {
   if (!data.value) return "";
   if (viewer.value) return `${data.value.range} · ${viewer.value} 的个人视角`;
@@ -203,68 +203,79 @@ function sumSelected(fn: (u: PerUser) => number): number {
 const kpis = computed(() => {
   if (!data.value) return [];
   const m = data.value.meta;
-  // 个人视角：9 张换成该用户自己的指标
+  const catsList = cats.value;
+  // 个人视角：换成该用户自己的指标
   if (viewer.value) {
     const pu = data.value.perUser[viewer.value];
     if (!pu) return [];
     const total = pu.total;
     const outRatio = total > 0 ? ((pu.output / total) * 100).toFixed(1) : null;
     const share = m.totalTokens > 0 ? ((total / m.totalTokens) * 100).toFixed(1) : null;
-    const proHit = pu.proCh + pu.proCm > 0 ? ((pu.proCh / (pu.proCh + pu.proCm)) * 100).toFixed(1) : null;
-    const flashHit = pu.flashCh + pu.flashCm > 0 ? ((pu.flashCh / (pu.flashCh + pu.flashCm)) * 100).toFixed(1) : null;
-    return [
+    const cards: any[] = [
       { label: "团队排名", value: rankOfViewer.value ? `#${rankOfViewer.value}` : "—", desc: `按总 Token 排名第 ${rankOfViewer.value ?? "—"} 名`, minor: true },
       { label: "总 Token", value: formatToken(total), desc: "输入 + 输出的 token 总量" },
       { label: "占团队", value: share ? share + "%" : "—", desc: "占团队总 token 的比例", minor: true },
-      { label: "Pro Token", value: formatToken(pu.pro), desc: "V4-Pro 模型的 token 量", minor: true },
-      { label: "Flash Token", value: formatToken(pu.flash), desc: "V4-Flash 模型的 token 量", minor: true },
+    ];
+    for (const c of catsList) {
+      cards.push({ label: `${c.label} Token`, value: formatToken(pu.models[c.key]?.tokens ?? 0), desc: `${c.label} 模型的 token 量`, minor: true });
+    }
+    cards.push(
       { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
       { label: "成本", value: formatCost(pu.cost), color: "#d03050", desc: "估算成本合计" },
-      { label: "Pro 命中率", value: proHit ? proHit + "%" : "—", color: "#18a058", desc: "V4-Pro 缓存命中 ÷ (命中 + 未命中)" },
-      { label: "Flash 命中率", value: flashHit ? flashHit + "%" : "—", color: "#18a058", desc: "V4-Flash 缓存命中 ÷ (命中 + 未命中)" },
-    ];
+    );
+    for (const c of catsList) {
+      const mc = pu.models[c.key];
+      const hit = mc && mc.ch + mc.cm > 0 ? ((mc.ch / (mc.ch + mc.cm)) * 100).toFixed(1) : null;
+      cards.push({ label: `${c.label} 命中率`, value: hit ? hit + "%" : "—", color: "#18a058", desc: `${c.label} 缓存命中 ÷ (命中 + 未命中)` });
+    }
+    return cards;
   }
   // 全员视角：选中了人员 → 这些人的合计
   const n = user.value.length;
   if (n > 0) {
     const total = sumSelected(u => u.total);
-    const pro = sumSelected(u => u.pro);
-    const flash = sumSelected(u => u.flash);
     const output = sumSelected(u => u.output);
     const cost = sumSelected(u => u.cost);
-    const proCh = sumSelected(u => u.proCh);
-    const proCm = sumSelected(u => u.proCm);
-    const flashCh = sumSelected(u => u.flashCh);
-    const flashCm = sumSelected(u => u.flashCm);
-    const proHit = proCh + proCm > 0 ? ((proCh / (proCh + proCm)) * 100).toFixed(1) + "%" : "—";
-    const flashHit = flashCh + flashCm > 0 ? ((flashCh / (flashCh + flashCm)) * 100).toFixed(1) + "%" : "—";
     const outRatio = total > 0 ? ((output / total) * 100).toFixed(1) : null;
-    return [
+    const cards: any[] = [
       { label: "人数", value: String(n), desc: "当前选中的人数", minor: true },
       { label: "总 Token", value: formatToken(total), desc: "选中人员合计 token" },
       { label: "人均 Token", value: formatToken(n ? Math.round(total / n) : 0), desc: "合计 token ÷ 人数", minor: true },
-      { label: "Pro Token", value: formatToken(pro), desc: "选中人员 V4-Pro token", minor: true },
-      { label: "Flash Token", value: formatToken(flash), desc: "选中人员 V4-Flash token", minor: true },
+    ];
+    for (const c of catsList) {
+      cards.push({ label: `${c.label} Token`, value: formatToken(sumSelected(u => u.models[c.key]?.tokens ?? 0)), desc: `选中人员 ${c.label} token`, minor: true });
+    }
+    cards.push(
       { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
       { label: "成本", value: formatCost(cost), color: "#d03050", desc: "选中人员估算成本合计" },
-      { label: "Pro 命中率", value: proHit, color: "#18a058", desc: "选中人员 Pro 缓存命中率" },
-      { label: "Flash 命中率", value: flashHit, color: "#18a058", desc: "选中人员 Flash 缓存命中率" },
-    ];
+    );
+    for (const c of catsList) {
+      const ch = sumSelected(u => u.models[c.key]?.ch ?? 0);
+      const cm = sumSelected(u => u.models[c.key]?.cm ?? 0);
+      const hit = ch + cm > 0 ? ((ch / (ch + cm)) * 100).toFixed(1) + "%" : "—";
+      cards.push({ label: `${c.label} 命中率`, value: hit, color: "#18a058", desc: `选中人员 ${c.label} 缓存命中率` });
+    }
+    return cards;
   }
-  // 全员视角：团队汇总 9 张
+  // 全员视角：团队汇总
   const outRatio = m.totalTokens > 0 ? ((m.totalOutput / m.totalTokens) * 100).toFixed(1) : null;
-  return [
-    // 9 张（3×3）：合并冗余（估算≈实际成本；用户数+天数），删总输入/总输出（输出占比已覆盖）
+  const cards: any[] = [
     { label: "用户数", value: `${m.users}人 · ${m.days}天`, desc: "统计范围内有调用记录的人数与天数", minor: true },
     { label: "总 Token", value: formatToken(m.totalTokens), desc: "输入 + 输出的 token 总量" },
     { label: "人均 Token", value: formatToken(m.avgTokens), desc: "总 Token ÷ 人数", minor: true },
-    { label: "Pro Token", value: formatToken(m.proTokens), desc: "V4-Pro 模型的 token 总量", minor: true },
-    { label: "Flash Token", value: formatToken(m.flashTokens), desc: "V4-Flash 模型的 token 总量", minor: true },
+  ];
+  for (const c of catsList) {
+    cards.push({ label: `${c.label} Token`, value: formatToken(m.byModel[c.key]?.tokens ?? 0), desc: `${c.label} 模型的 token 总量`, minor: true });
+  }
+  cards.push(
     { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
     { label: "成本", value: formatCost(m.actualCost), color: "#d03050", desc: "实际扣费（估算≈实际）" },
-    { label: "Pro 命中率", value: m.proCacheHitRate ? m.proCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Pro 缓存命中 ÷ (命中 + 未命中)" },
-    { label: "Flash 命中率", value: m.flashCacheHitRate ? m.flashCacheHitRate + "%" : "—", color: "#18a058", desc: "V4-Flash 缓存命中 ÷ (命中 + 未命中)" },
-  ];
+  );
+  for (const c of catsList) {
+    const hit = m.byModel[c.key]?.hitRate;
+    cards.push({ label: `${c.label} 命中率`, value: hit ? hit + "%" : "—", color: "#18a058", desc: `${c.label} 缓存命中 ÷ (命中 + 未命中)` });
+  }
+  return cards;
 });
 
 const totalCols = [
@@ -286,15 +297,12 @@ const rankView = computed(() => {
   if (!data.value) return { rows: [], cols: totalCols };
   let rows: any[];
   let cols: { key: string; label: string; type?: string; help?: string }[];
-  if (model.value === "pro") {
-    rows = data.value.rankPro;
-    cols = modelCols;
-  } else if (model.value === "flash") {
-    rows = data.value.rankFlash;
-    cols = modelCols;
-  } else {
+  if (model.value === "all") {
     rows = data.value.rankTotal;
     cols = totalCols;
+  } else {
+    rows = data.value.rankByModel[model.value] ?? [];
+    cols = modelCols;
   }
   if (user.value.length > 0) {
     const set = new Set(user.value);
@@ -340,20 +348,19 @@ const trendView = computed(() => {
     return { data: pu?.daily ?? [], personal: true };
   }
   if (user.value.length === 0) return { data: data.value.trend, personal: false };
-  // 合并选中人员的每日 token
-  const m = new Map<string, { pro: number; flash: number }>();
+  // 合并选中人员的每日各类 token
+  const m = new Map<string, Record<string, number>>();
   for (const name of user.value) {
     const pu = data.value.perUser[name];
     if (!pu) continue;
     for (const d of pu.daily) {
-      const e = m.get(d.day) ?? { pro: 0, flash: 0 };
-      e.pro += d.pro;
-      e.flash += d.flash;
+      const e = m.get(d.day) ?? {};
+      for (const [k, v] of Object.entries(d.models)) e[k] = (e[k] ?? 0) + v;
       m.set(d.day, e);
     }
   }
   const daily = [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([day, e]) => ({ day, pro: e.pro, flash: e.flash }));
+    .map(([day, e]) => ({ day, models: e }));
   return { data: daily, personal: true };
 });
 
@@ -374,14 +381,14 @@ const rankTitle = computed(() => {
 
 // 卡片标题旁的问号注解（\n 换行）
 const trendHelp = computed(() => {
-  if (viewer.value) return "Pro / Flash 两条每日 Token 曲线，看个人用量走势\n命中率与多维度对比见下方「个人分析」";
-  if (user.value.length === 0) return "左轴 = 费用（元）：Pro 估算、Flash 估算、实际扣费三条线\n右轴 = 命中率：缓存命中 ÷ (命中 + 未命中) token";
-  return "Pro / Flash 两条每日 Token 曲线（选中人员每日合计）\n命中率见下方排行行点击展开的详情面板";
+  if (viewer.value) return "各类模型每日 Token 曲线，看个人用量走势\n命中率与多维度对比见下方「个人分析」";
+  if (user.value.length === 0) return "左轴 = 费用（元）：各类估算、实际扣费\n右轴 = 命中率：缓存命中 ÷ (命中 + 未命中) token";
+  return "各类模型每日 Token 曲线（选中人员每日合计）\n命中率见下方排行行点击展开的详情面板";
 });
 const rankHelp = "按总 Token 降序排列，点击表头可切换排序\n命中率 <80% 标红、>95% 标绿\n点击行展开该用户每日趋势";
 // 个人分析卡注解（个人视角下 rank 区块替换成两张模型分析卡）
-const personalHelp = "Pro / Flash 各一张卡：该模型维度的 Token、成本、缓存命中率、使用天数，相对团队同模型用户的偏差%\n只用一种模型的用户，另一张卡显示空态";
-const personaHelp = "四维画像：规模 / 模型偏好 / 使用模式 / 成本效率\n规模：重度（成本前1/3）/ 中度 / 轻度\n模型：Pro（Pro>66%）/ Flash / 混用\n模式：读判（输出<0.5%）/ 生成（输出>2%）/ 均衡\n效率：省钱（命中>95%）/ 持平 / 费钱（<80%）\n成本强度：成本 ÷ 全团队最高成本";
+const personalHelp = "每类模型各一张卡：该模型维度的 Token、成本、缓存命中率、使用天数，相对团队同模型用户的偏差%\n没用某类模型的用户，该类卡显示空态";
+const personaHelp = "四维画像：规模 / 模型偏好 / 使用模式 / 成本效率\n规模：重度（成本前1/3）/ 中度 / 轻度\n模型：占比最高类（>66%）标该类名，否则「混用」\n模式：读判（输出<0.5%）/ 生成（输出>2%）/ 均衡\n效率：省钱（命中>95%）/ 持平 / 费钱（<80%）\n成本强度：成本 ÷ 全团队最高成本";
 
 // 画像分档始终按全团队算（避免筛选后单独看某人时标签乱变），展示随筛选过滤
 // 雷达图「活跃」轴需要每人活跃天数 + 统计天数
@@ -392,7 +399,7 @@ const activityMap = computed(() => {
   }
   return m;
 });
-const personas = computed(() => computePersonas(data.value?.rankTotal ?? [], activityMap.value, data.value?.meta.days ?? 0));
+const personas = computed(() => computePersonas(data.value?.rankTotal ?? [], activityMap.value, data.value?.meta.days ?? 0, data.value?.categories ?? []));
 const profileRows = computed(() => {
   if (!data.value) return [];
   // 个人视角聚焦当前用户；全员视角跟随人员筛选
@@ -425,15 +432,12 @@ const detailMap = computed(() => {
       rank: rankOf[r.user] ?? r.rank,
       share: d.meta.totalTokens ? +((pu.total / d.meta.totalTokens) * 100).toFixed(1) : 0,
       total: pu.total,
-      pro: pu.pro,
-      flash: pu.flash,
       input: r.input,
       output: r.output,
       outputRatio: r.outputRatio,
       cost: pu.cost,
       hitRate: r.hitRate,
-      proHitRate: r.proHitRate,
-      flashHitRate: r.flashHitRate,
+      models: cats.value.map(c => ({ label: c.label, tokens: r.models[c.key]?.tokens ?? 0, hitRate: r.models[c.key]?.hitRate ?? null })),
     };
   }
   return map;
@@ -480,6 +484,7 @@ const detailMap = computed(() => {
         :users="userList"
         :model="model"
         :user="user"
+        :cats="cats"
         :show-user="!viewer"
         @query="query"
         @update:model="onModelChange"
@@ -521,7 +526,7 @@ const detailMap = computed(() => {
                 </n-button>
               </div>
             </template>
-            <ProfileWall :rows="profileRows" :personas="personas" :expanded="personaExpanded" @update:hasMore="personaHasMore = $event" @select="holoUser = $event" />
+            <ProfileWall :rows="profileRows" :personas="personas" :cats="cats" :expanded="personaExpanded" @update:hasMore="personaHasMore = $event" @select="holoUser = $event" />
           </n-card>
 
           <n-card :bordered="false" class="block" size="small" id="trend">
@@ -530,7 +535,7 @@ const detailMap = computed(() => {
                 <CardTitle :title="trendTitle" :help="trendHelp" />
               </div>
             </template>
-            <TrendChart :data="trendView.data" :personal="trendView.personal" />
+            <TrendChart :data="trendView.data" :personal="trendView.personal" :cats="cats" />
           </n-card>
 
           <n-card v-if="!viewer" :bordered="false" class="block" size="small" id="rank">
@@ -551,6 +556,7 @@ const detailMap = computed(() => {
                 v-if="selectedDaily"
                 :user="selectedDaily.user"
                 :daily="selectedDaily.daily"
+                :cats="cats"
                 @close="selectedUser = null"
               />
             </Teleport>
@@ -562,13 +568,9 @@ const detailMap = computed(() => {
               <CardTitle title="个人分析" :help="personalHelp" />
             </div>
             <div class="pa-grid">
-              <div class="pa-card">
-                <div class="pa-sub">Pro 分析</div>
-                <CompareChart :user="viewerName" :data="data" model="pro" />
-              </div>
-              <div class="pa-card">
-                <div class="pa-sub">Flash 分析</div>
-                <CompareChart :user="viewerName" :data="data" model="flash" />
+              <div v-for="c in cats" :key="c.key" class="pa-card">
+                <div class="pa-sub">{{ c.label }} 分析</div>
+                <CompareChart :user="viewerName" :data="data" :model="c.key" :label="c.label" :color="c.color" />
               </div>
             </div>
           </div>
@@ -578,7 +580,7 @@ const detailMap = computed(() => {
       <transition name="holo-fade">
         <div v-if="holoUser" class="holo-mask" @click="holoUser = null">
           <div class="holo-wrap" @click.stop>
-            <HologramPanel v-if="holoRow" :row="holoRow.row" :persona="holoRow.persona" />
+            <HologramPanel v-if="holoRow" :row="holoRow.row" :persona="holoRow.persona" :cats="cats" />
           </div>
         </div>
       </transition>

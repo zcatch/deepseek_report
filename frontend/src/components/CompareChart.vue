@@ -5,13 +5,13 @@ import { NEmpty } from "naive-ui";
 import type { UsageData } from "../api";
 import { formatToken, formatCost } from "../format";
 
-// 模型分析：该用户在 Pro / Flash 某一模型维度 vs 团队同模型用户均值，横向条形显示相对偏差
-const props = defineProps<{ user: string; data: UsageData; model: "pro" | "flash" }>();
+// 模型分析：该用户在某一模型维度 vs 团队同模型用户均值，横向条形显示相对偏差
+const props = defineProps<{ user: string; data: UsageData; model: string; label: string; color: string }>();
 
 const el = ref<HTMLDivElement>();
 let chart: echarts.ECharts | null = null;
 
-const modelLabel = computed(() => (props.model === "pro" ? "Pro" : "Flash"));
+const modelLabel = computed(() => props.label);
 const emptyText = computed(() => `该用户未使用 ${modelLabel.value}`);
 
 interface CmpItem {
@@ -29,14 +29,14 @@ const items = computed<CmpItem[]>(() => {
   const pu = d.perUser[props.user];
   if (!pu) return [];
   const model = props.model;
-  const myToken = model === "pro" ? pu.pro : pu.flash;
+  const myToken = pu.models[model]?.tokens ?? 0;
   if (myToken <= 0) return [];
-  const rows = model === "pro" ? d.rankPro : d.rankFlash;
+  const rows = d.rankByModel[model] ?? [];
   if (!rows.length) return [];
 
   // 该模型维度的活跃天数：daily 里该模型 token > 0 的天数
   const activeDays = (u: string) =>
-    (d.perUser[u]?.daily ?? []).filter(x => (model === "pro" ? x.pro > 0 : x.flash > 0)).length;
+    (d.perUser[u]?.daily ?? []).filter(x => (x.models?.[model] ?? 0) > 0).length;
 
   const each = rows.map(r => ({
     tokens: r.tokens,
@@ -82,8 +82,8 @@ const ratio = computed(() => {
   const pu = props.data.perUser[props.user];
   if (!pu) return null;
   const model = props.model;
-  const t = model === "pro" ? pu.pro : pu.flash;
-  const rows = model === "pro" ? props.data.rankPro : props.data.rankFlash;
+  const t = pu.models[model]?.tokens ?? 0;
+  const rows = props.data.rankByModel[model] ?? [];
   const c = rows.find(r => r.user === props.user)?.cost ?? 0;
   const sumT = rows.reduce((a, r) => a + r.tokens, 0);
   const sumC = rows.reduce((a, r) => a + r.cost, 0);
@@ -107,10 +107,8 @@ function fmtTeam(i: CmpItem): string {
   return v.toFixed(1) + "%";
 }
 
-function barColor(model: "pro" | "flash"): echarts.graphic.LinearGradient {
-  return model === "pro"
-    ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: "#4f6ef7" }, { offset: 1, color: "#7c5cff" }])
-    : new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: "#0ea5a0" }, { offset: 1, color: "#34d399" }]);
+function barColor(color: string): echarts.graphic.LinearGradient {
+  return new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color }, { offset: 1, color }]);
 }
 
 function render() {
@@ -163,7 +161,7 @@ function render() {
         },
         data: list.map(i => ({
           value: i.bias,
-          itemStyle: { borderRadius: 6, color: barColor(props.model) },
+          itemStyle: { borderRadius: 6, color: barColor(props.color) },
         })),
         markLine: {
           silent: true,
@@ -189,7 +187,7 @@ onBeforeUnmount(() => {
   chart = null;
 });
 // flush: post —— 等 DOM 更新后再渲染，否则从空态切到有图时 chart div 还没挂载，el 为 null 会提前 return，图表永远空白
-watch(() => [props.user, props.data, props.model], render, { deep: true, flush: "post" });
+watch(() => [props.user, props.data, props.model, props.label, props.color], render, { deep: true, flush: "post" });
 </script>
 
 <template>

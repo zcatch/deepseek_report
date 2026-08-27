@@ -8,6 +8,7 @@ import ProfileCard from "./ProfileCard.vue";
 const props = defineProps<{
   rows: RankTotal[];
   personas: Map<string, Persona>;
+  cats?: { key: string; label: string; color: string }[];
   expanded?: boolean;
 }>();
 
@@ -55,7 +56,7 @@ const collapsedStyle = computed(() =>
 
 <template>
   <div v-if="rows.length" ref="wallEl" class="wall" :class="{ collapsed: !expanded }" :style="collapsedStyle">
-    <ProfileCard v-for="r in rows" :key="r.user" :row="r" :persona="personas.get(r.user)!" @select="emit('select', r.user)" />
+    <ProfileCard v-for="r in rows" :key="r.user" :row="r" :persona="personas.get(r.user)!" :cats="cats" @select="emit('select', r.user)" />
   </div>
   <div v-else class="wall-empty"><n-empty description="暂无人员画像数据" size="small" /></div>
 </template>

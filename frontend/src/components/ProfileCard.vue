@@ -6,7 +6,7 @@ import type { Persona } from "../persona";
 import { formatCost, formatToken, formatHitRate, hitRateColor } from "../format";
 import RadarMini from "./RadarMini.vue";
 
-const props = defineProps<{ row: RankTotal; persona: Persona }>();
+const props = defineProps<{ row: RankTotal; persona: Persona; cats?: { key: string; label: string; color: string }[] }>();
 const emit = defineEmits<{ (e: "select"): void }>();
 
 const initial = computed(() => (props.row.user.trim()[0] ?? "?").toUpperCase());
@@ -31,14 +31,12 @@ const avatarBg = computed(() => {
 const cost = computed(() => formatCost(props.row.cost));
 const hit = computed(() => formatHitRate(props.row.hitRate));
 const hitColor = computed(() => hitRateColor(props.row.hitRate));
-const pro = computed(() => formatToken(props.row.pro));
-const flash = computed(() => formatToken(props.row.flash));
 
 // 四个标签 chip：颜色与 format.ts 的语义色保持一致
 const chips = computed(() => {
   const p = props.persona;
   const scaleColor = p.scale === "重度" ? "#7c5cff" : p.scale === "中度" ? "#4f6ef7" : "#a3b6ff";
-  const modelColor = p.model === "Pro" ? "#3e5ce6" : p.model === "Flash" ? "#0ea5a0" : "#909399";
+  const modelColor = p.model === "混用" ? "#909399" : "#4f6ef7";
   const modeColor = p.mode === "读判" ? "#409eff" : p.mode === "生成" ? "#ff7d00" : "#909399";
   const effColor = p.eff === "省钱" ? "#18a058" : p.eff === "费钱" ? "#d03050" : "#f0a020";
   return [
@@ -75,8 +73,7 @@ const chips = computed(() => {
     <div class="profile-tip">
       成本：{{ cost }}<br />
       命中率：{{ hit }}<br />
-      Pro：{{ pro }}<br />
-      Flash：{{ flash }}
+      <template v-for="c in cats" :key="c.key">{{ c.label }}：{{ formatToken(row.models[c.key]?.tokens ?? 0) }}<br /></template>
     </div>
   </n-popover>
 </template>

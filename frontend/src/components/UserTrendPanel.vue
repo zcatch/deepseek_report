@@ -6,7 +6,8 @@ import { formatToken, formatCost } from "../format";
 
 const props = defineProps<{
   user: string;
-  daily: { day: string; pro: number; flash: number; cost: number; hitRate: string | null }[];
+  daily: { day: string; models: Record<string, number>; cost: number; hitRate: string | null }[];
+  cats?: { key: string; label: string; color: string }[];
 }>();
 
 const emit = defineEmits<{ (e: "close"): void }>();
@@ -39,10 +40,12 @@ function render() {
         const idx = params?.[0]?.dataIndex ?? 0;
         const d = props.daily[idx];
         if (!d) return "";
-        return `${d.day}<br/>Pro：${formatToken(d.pro)}<br/>Flash：${formatToken(d.flash)}<br/>命中率：${d.hitRate ?? "—"}%<br/>估算成本：${formatCost(d.cost)}`;
+        const cats = props.cats ?? [];
+        const lines = cats.map(c => `${c.label}：${formatToken(d.models?.[c.key] ?? 0)}`).join("<br/>");
+        return `${d.day}<br/>${lines}<br/>命中率：${d.hitRate ?? "—"}%<br/>估算成本：${formatCost(d.cost)}`;
       },
     },
-    legend: { data: ["Pro Token", "Flash Token", "命中率"], top: 0 },
+    legend: { data: [...(props.cats ?? []).map(c => `${c.label} Token`), "命中率"], top: 0 },
     grid,
     xAxis: { type: "category", boundaryGap: false, data: props.daily.map(d => d.day), axisLabel },
     yAxis: [
@@ -51,8 +54,7 @@ function render() {
       { type: "value", min: 0, max: 100, axisLabel: { formatter: "{value}%", fontSize: labelSize } },
     ],
     series: [
-      { name: "Pro Token", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.daily.map(d => d.pro), itemStyle: { color: "#5470c6" }, lineStyle: { width: 2 } },
-      { name: "Flash Token", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.daily.map(d => d.flash), itemStyle: { color: "#91cc75" }, lineStyle: { width: 2 } },
+      ...(props.cats ?? []).map(c => ({ name: `${c.label} Token`, type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.daily.map(d => d.models?.[c.key] ?? 0), itemStyle: { color: c.color }, lineStyle: { width: 2 } })),
       { name: "命中率", type: "line", yAxisIndex: 1, smooth: true, symbol: "triangle", symbolSize: 6, data: props.daily.map(d => (d.hitRate != null ? parseFloat(d.hitRate) : null)), itemStyle: { color: "#f0a020" }, lineStyle: { width: 2, type: "dashed" } },
     ],
   }, true);
@@ -69,7 +71,7 @@ onBeforeUnmount(() => {
   chart?.dispose();
   chart = null;
 });
-watch(() => props.daily, render, { deep: true });
+watch(() => [props.daily, props.cats], render, { deep: true });
 </script>
 
 <template>
