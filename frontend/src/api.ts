@@ -1,15 +1,29 @@
 // 类别颜色：按 categories 顺序循环取色（加第 N 类自动取第 N 色，超出循环复用）
 export const CATEGORY_COLORS = [
-  "#5470c6", // 蓝
-  "#91cc75", // 绿
-  "#ee6666", // 红
-  "#fac858", // 黄
-  "#73c0de", // 青
-  "#fc8452", // 橙
-  "#9a60b4", // 紫
-  "#ea7ccc", // 粉
-  "#48c9b0", // 青绿
-  "#f7ba2a", // 金
+  "#5b8df0", // 浅蓝（Pro）
+  "#4bc899", // 薄荷（Flash）
+  "#ee8cbd", // 浅粉（Vision）
+  "#c4b5fd", // 浅紫
+  "#fde68a", // 浅黄
+  "#fda4af", // 浅玫瑰
+  "#a5f3fc", // 浅青
+  "#fbcfe8", // 浅粉紫
+  "#fed7aa", // 浅橙
+  "#b9e4c9", // 浅绿
+];
+
+// 每个类别对应的双色渐变（左→右），用于条形图等需要渐变的场景
+export const CATEGORY_GRADIENTS: [string, string][] = [
+  ["#5b8df0", "#8bb4e8"], // Pro 浅蓝→更浅蓝
+  ["#4bc899", "#7bd0ac"], // Flash 薄荷→更浅薄荷
+  ["#ee8cbd", "#f0aed0"], // Vision 浅粉→更浅粉
+  ["#c4b5fd", "#ddd6fe"],
+  ["#fde68a", "#fef3c7"],
+  ["#fda4af", "#fecdd3"],
+  ["#a5f3fc", "#cffafe"],
+  ["#fbcfe8", "#fce7f3"],
+  ["#fed7aa", "#ffedd5"],
+  ["#b9e4c9", "#d1fae5"],
 ];
 
 export interface Category {

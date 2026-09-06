@@ -364,8 +364,48 @@ const trendView = computed(() => {
   return { data: daily, personal: true };
 });
 
+// 折线图 tooltip 人员明细：悬停某天时展示当天各人 token（默认全部人，筛选后只展示选中人；个人视角不展示）
+const trendTooltipByDay = computed(() => {
+  const d = data.value;
+  const map = new Map<string, { user: string; tokens: number }[]>();
+  if (!d || viewer.value) return map;
+  const names = user.value.length > 0 ? user.value : d.rankTotal.map(r => r.user);
+  for (const name of names) {
+    const pu = d.perUser[name];
+    if (!pu) continue;
+    for (const p of pu.daily) {
+      const tokens = Object.values(p.models).reduce((a, b) => a + (b ?? 0), 0);
+      const arr = map.get(p.day) ?? [];
+      arr.push({ user: name, tokens });
+      map.set(p.day, arr);
+    }
+  }
+  for (const arr of map.values()) arr.sort((a, b) => b.tokens - a.tokens);
+  return map;
+});
+
+// 是否单天范围：单天时间轴只剩 1 点，主图切换为「按人对比」
+const isSingleDay = computed(() => !!data.value && data.value.meta.days <= 1);
+
+// 单天时的按人数据（x 轴 = 人，各模型 token 堆叠）；跨天/个人视角返回 null 走时间轴
+const byUserData = computed(() => {
+  const d = data.value;
+  if (!d || viewer.value || !isSingleDay.value) return null;
+  const rows = user.value.length > 0
+    ? d.rankTotal.filter(r => user.value.includes(r.user))
+    : d.rankTotal;
+  return rows.map(r => ({
+    user: r.user,
+    tokens: r.total,
+    cost: r.cost,
+    hitRate: r.hitRate,
+    models: Object.fromEntries(cats.value.map(c => [c.key, r.models[c.key]?.tokens ?? 0])),
+  }));
+});
+
 const trendTitle = computed(() => {
   if (viewer.value) return "每日 Token 趋势";
+  if (isSingleDay.value) return "人员用量对比";
   const n = user.value.length;
   if (n === 0) return "每日费用趋势";
   if (n === 1) return `${user.value[0]} 每日 Token 趋势`;
@@ -535,7 +575,7 @@ const detailMap = computed(() => {
                 <CardTitle :title="trendTitle" :help="trendHelp" />
               </div>
             </template>
-            <TrendChart :data="trendView.data" :personal="trendView.personal" :cats="cats" />
+            <TrendChart :data="trendView.data" :personal="trendView.personal" :cats="cats" :user-daily="trendTooltipByDay" :by-user="byUserData" />
           </n-card>
 
           <n-card v-if="!viewer" :bordered="false" class="block" size="small" id="rank">
