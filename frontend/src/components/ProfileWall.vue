@@ -50,7 +50,9 @@ watch(() => [props.rows, props.expanded], () => measure());
 
 // 收起态用高度裁剪只露出第一行；展开态全显示
 const collapsedStyle = computed(() =>
-  props.expanded ? {} : { maxHeight: rowHeight.value ? `${rowHeight.value}px` : "none", overflow: "hidden" }
+  props.expanded
+    ? { paddingTop: "6px" }
+    : { maxHeight: rowHeight.value ? `${rowHeight.value}px` : "none", overflow: "hidden", paddingTop: "6px" }
 );
 </script>
 
@@ -80,10 +82,7 @@ const collapsedStyle = computed(() =>
     grid-template-columns: 1fr;
   }
 }
-/* 收起态：首行卡片 hover 不上浮，避免顶部描边被 overflow 裁掉 */
-.wall.collapsed .profile-card:hover {
-  transform: none;
-}
+/* 收起态：卡片 hover 上浮保留，顶部留白由 collapsedStyle 的 padding-top 承接，避免被 overflow 裁掉 */
 .wall-empty {
   display: flex;
   align-items: center;

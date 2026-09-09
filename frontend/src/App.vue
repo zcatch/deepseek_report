@@ -118,6 +118,7 @@ onMounted(() => query());
 // 模型筛选变更：更新并立即重查（转圈反馈）
 function onModelChange(v: string) {
   model.value = v;
+  holoUser.value = null; // 模型切换时关闭全息面板（画像随之隐藏，避免残留跨模型明细）
   query();
 }
 
@@ -177,6 +178,11 @@ const cats = computed(() =>
   (data.value?.categories ?? []).map((c, i) => ({ key: c.key, label: c.label, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }))
 );
 
+// 模型筛选后的类别：只保留该模型（趋势图 legend/系列、个人分析卡片等按此过滤）
+const modelCats = computed(() =>
+  model.value === "all" ? cats.value : cats.value.filter(c => c.key === model.value)
+);
+
 const subtitle = computed(() => {
   if (!data.value) return "";
   if (viewer.value) return `${data.value.range} · ${viewer.value} 的个人视角`;
@@ -204,6 +210,23 @@ const kpis = computed(() => {
   if (!data.value) return [];
   const m = data.value.meta;
   const catsList = cats.value;
+  // 模型筛选：只统计该模型（团队口径，用 meta.byModel + 该模型人数）
+  if (model.value !== "all") {
+    const bm = m.byModel[model.value];
+    const label = catsList.find(c => c.key === model.value)?.label ?? model.value;
+    const color = catsList.find(c => c.key === model.value)?.color ?? "#4f6ef7";
+    if (!bm) return [];
+    const n = data.value.rankByModel[model.value]?.length ?? 0;
+    const outRatio = bm.tokens > 0 ? ((bm.output / bm.tokens) * 100).toFixed(1) : null;
+    return [
+      { label: "用户数", value: `${n}人`, desc: `使用 ${label} 模型的人数`, minor: true },
+      { label: `${label} Token`, value: formatToken(bm.tokens), desc: `${label} 模型 token 总量` },
+      { label: "人均 Token", value: formatToken(n > 0 ? Math.round(bm.tokens / n) : 0), desc: `${label} token ÷ 人数`, minor: true },
+      { label: "输出占比", value: formatPercent(outRatio), color: outputRatioColor(outRatio), desc: "输出 ÷ 总 token：越低越偏「读判」，越高越偏「生成」" },
+      { label: "成本", value: formatCost(bm.cost), color: "#d03050", desc: `${label} 模型估算成本` },
+      { label: "命中率", value: bm.hitRate ? bm.hitRate + "%" : "—", color, desc: `${label} 缓存命中 ÷ (命中 + 未命中)` },
+    ];
+  }
   // 个人视角：换成该用户自己的指标
   if (viewer.value) {
     const pu = data.value.perUser[viewer.value];
@@ -226,7 +249,7 @@ const kpis = computed(() => {
     for (const c of catsList) {
       const mc = pu.models[c.key];
       const hit = mc && mc.ch + mc.cm > 0 ? ((mc.ch / (mc.ch + mc.cm)) * 100).toFixed(1) : null;
-      cards.push({ label: `${c.label} 命中率`, value: hit ? hit + "%" : "—", color: "#18a058", desc: `${c.label} 缓存命中 ÷ (命中 + 未命中)` });
+      cards.push({ label: `${c.label} 命中率`, value: hit ? hit + "%" : "—", color: c.color, desc: `${c.label} 缓存命中 ÷ (命中 + 未命中)` });
     }
     return cards;
   }
@@ -253,7 +276,7 @@ const kpis = computed(() => {
       const ch = sumSelected(u => u.models[c.key]?.ch ?? 0);
       const cm = sumSelected(u => u.models[c.key]?.cm ?? 0);
       const hit = ch + cm > 0 ? ((ch / (ch + cm)) * 100).toFixed(1) + "%" : "—";
-      cards.push({ label: `${c.label} 命中率`, value: hit, color: "#18a058", desc: `选中人员 ${c.label} 缓存命中率` });
+      cards.push({ label: `${c.label} 命中率`, value: hit, color: c.color, desc: `选中人员 ${c.label} 缓存命中率` });
     }
     return cards;
   }
@@ -273,7 +296,7 @@ const kpis = computed(() => {
   );
   for (const c of catsList) {
     const hit = m.byModel[c.key]?.hitRate;
-    cards.push({ label: `${c.label} 命中率`, value: hit ? hit + "%" : "—", color: "#18a058", desc: `${c.label} 缓存命中 ÷ (命中 + 未命中)` });
+    cards.push({ label: `${c.label} 命中率`, value: hit ? hit + "%" : "—", color: c.color, desc: `${c.label} 缓存命中 ÷ (命中 + 未命中)` });
   }
   return cards;
 });
@@ -317,6 +340,17 @@ function onScatterTabChange(v: string | number | null) {
 
 const scatterPoints = computed(() => {
   if (!data.value) return [];
+  // 模型筛选：散点只看该模型（输入 = 缓存命中 + 未命中，来自 rankByModel）
+  if (model.value !== "all") {
+    const rows = data.value.rankByModel[model.value] ?? [];
+    return rows.map(r => {
+      const input = r.cacheHit + r.cacheMiss;
+      return {
+        user: r.user, total: r.tokens, hitRate: r.hitRate, cost: r.cost, input, output: r.output,
+        outputRatio: r.tokens > 0 ? ((r.output / r.tokens) * 100).toFixed(1) : null,
+      };
+    });
+  }
   // 个人视角始终看全团队分布（highlight 高亮当前用户）；全员视角跟随人员筛选
   const rows = viewer.value || user.value.length === 0
     ? data.value.rankTotal
@@ -327,8 +361,8 @@ const scatterPoints = computed(() => {
 // 散点图两个视角的注解说明（\n 在气泡里换行显示）
 const scatterNote = computed(() =>
   scatterTab.value === "hit"
-    ? "横轴 = 总 Token，纵轴 = 缓存命中率\n气泡大小 = 成本；命中率越高越省钱"
-    : "横轴 = 输入 Token，纵轴 = 输出 Token\n气泡大小 = 成本；越靠左越偏「读判」，越靠右上越偏「生成」"
+    ? "横轴：总 Token\n纵轴：缓存命中率\n气泡：越大成本越高，命中率越高越省钱"
+    : "横轴：输入 Token\n纵轴：输出 Token\n气泡：越大成本越高，占比越高偏「生成」，越低偏「读判」"
 );
 
 function onSelectUser(u: string) {
@@ -343,6 +377,28 @@ const selectedDaily = computed(() => {
 
 const trendView = computed(() => {
   if (!data.value) return { data: [], personal: false };
+  // 模型筛选：跨人员聚合该模型每日 token + 命中率
+  if (model.value !== "all") {
+    const names = user.value.length > 0 ? user.value : Object.keys(data.value.perUser);
+    const m = new Map<string, { tokens: number; ch: number; cm: number }>();
+    for (const name of names) {
+      const pu = data.value.perUser[name];
+      if (!pu) continue;
+      for (const d of pu.daily) {
+        const tokens = d.models[model.value] ?? 0;
+        const ch = d.modelCh?.[model.value] ?? 0;
+        const cm = d.modelCm?.[model.value] ?? 0;
+        const e = m.get(d.day) ?? { tokens: 0, ch: 0, cm: 0 };
+        e.tokens += tokens;
+        e.ch += ch;
+        e.cm += cm;
+        m.set(d.day, e);
+      }
+    }
+    const daily = [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([day, e]) => ({ day, tokens: e.tokens, hitRate: e.ch + e.cm > 0 ? ((e.ch / (e.ch + e.cm)) * 100).toFixed(1) : null }));
+    return { data: daily, personal: false, singleModel: model.value };
+  }
   if (viewer.value) {
     const pu = data.value.perUser[viewer.value];
     return { data: pu?.daily ?? [], personal: true };
@@ -391,6 +447,17 @@ const isSingleDay = computed(() => !!data.value && data.value.meta.days <= 1);
 const byUserData = computed(() => {
   const d = data.value;
   if (!d || viewer.value || !isSingleDay.value) return null;
+  // 模型筛选：单天按人排行用该模型数据
+  if (model.value !== "all") {
+    const rows = d.rankByModel[model.value] ?? [];
+    return rows.map(r => ({
+      user: r.user,
+      tokens: r.tokens,
+      cost: r.cost,
+      hitRate: r.hitRate,
+      models: { [model.value]: r.tokens },
+    }));
+  }
   const rows = user.value.length > 0
     ? d.rankTotal.filter(r => user.value.includes(r.user))
     : d.rankTotal;
@@ -404,6 +471,10 @@ const byUserData = computed(() => {
 });
 
 const trendTitle = computed(() => {
+  if (model.value !== "all") {
+    const label = cats.value.find(c => c.key === model.value)?.label ?? model.value;
+    return isSingleDay.value ? `${label} 人员用量对比` : `${label} 每日趋势`;
+  }
   if (viewer.value) return "每日 Token 趋势";
   if (isSingleDay.value) return "人员用量对比";
   const n = user.value.length;
@@ -413,6 +484,10 @@ const trendTitle = computed(() => {
 });
 
 const rankTitle = computed(() => {
+  if (model.value !== "all") {
+    const label = cats.value.find(c => c.key === model.value)?.label ?? model.value;
+    return `${label} 排行`;
+  }
   const n = user.value.length;
   if (n === 0) return "用量排行";
   if (n === 1) return `${user.value[0]} 的用量明细`;
@@ -421,7 +496,9 @@ const rankTitle = computed(() => {
 
 // 卡片标题旁的问号注解（\n 换行）
 const trendHelp = computed(() => {
+  if (model.value !== "all") return isSingleDay.value ? "纵轴：人员排行（token 从高到低）\n横轴：token 消耗（各类模型堆叠）" : "该模型每日 token 与缓存命中率走势\n左轴：token · 右轴：命中率%";
   if (viewer.value) return "各类模型每日 Token 曲线，看个人用量走势\n命中率与多维度对比见下方「个人分析」";
+  if (isSingleDay.value) return "纵轴：人员排行（token 从高到低）\n横轴：token 消耗（各类模型堆叠）";
   if (user.value.length === 0) return "左轴 = 费用（元）：各类估算、实际扣费\n右轴 = 命中率：缓存命中 ÷ (命中 + 未命中) token";
   return "各类模型每日 Token 曲线（选中人员每日合计）\n命中率见下方排行行点击展开的详情面板";
 });
@@ -464,6 +541,29 @@ const detailMap = computed(() => {
   // rank 用当前视图的排名（排序/过滤后），而非原始 rankTotal
   const rankOf: Record<string, number> = {};
   for (const row of rankView.value.rows) rankOf[row.user] = row.rank;
+  // 模型筛选：悬浮明细只看该模型（token/输入输出/成本/命中率均该模型口径）
+  if (model.value !== "all") {
+    const label = cats.value.find(c => c.key === model.value)?.label ?? model.value;
+    const color = cats.value.find(c => c.key === model.value)?.color ?? "#4f6ef7";
+    const rows = d.rankByModel[model.value] ?? [];
+    const teamTokens = d.meta.byModel[model.value]?.tokens ?? 0;
+    for (const r of rows) {
+      const input = r.cacheHit + r.cacheMiss;
+      map[r.user] = {
+        user: r.user,
+        rank: rankOf[r.user] ?? r.rank,
+        share: teamTokens > 0 ? +((r.tokens / teamTokens) * 100).toFixed(1) : 0,
+        total: r.tokens,
+        input,
+        output: r.output,
+        outputRatio: r.tokens > 0 ? ((r.output / r.tokens) * 100).toFixed(1) : null,
+        cost: r.cost,
+        hitRate: r.hitRate,
+        models: [{ label, color, tokens: r.tokens, hitRate: r.hitRate }],
+      };
+    }
+    return map;
+  }
   for (const r of d.rankTotal) {
     const pu = d.perUser[r.user];
     if (!pu) continue;
@@ -477,7 +577,7 @@ const detailMap = computed(() => {
       outputRatio: r.outputRatio,
       cost: pu.cost,
       hitRate: r.hitRate,
-      models: cats.value.map(c => ({ label: c.label, tokens: r.models[c.key]?.tokens ?? 0, hitRate: r.models[c.key]?.hitRate ?? null })),
+      models: cats.value.map(c => ({ label: c.label, color: c.color, tokens: r.models[c.key]?.tokens ?? 0, hitRate: r.models[c.key]?.hitRate ?? null })),
     };
   }
   return map;
@@ -490,7 +590,7 @@ const detailMap = computed(() => {
       <div class="app">
       <header class="header">
         <div class="title">
-          <h1>DeepSeek 用量排行</h1>
+          <h1>DeepSeek 用量看版</h1>
           <span v-if="data" class="subtitle">{{ subtitle }}</span>
         </div>
         <div v-if="data" class="viewer-wrap">
@@ -550,10 +650,10 @@ const detailMap = computed(() => {
                 </n-tabs>
               </div>
             </template>
-            <ScatterChart :points="scatterPoints" :mode="scatterTab" :highlight="viewer ?? undefined" />
+            <ScatterChart :points="scatterPoints" :mode="scatterTab" :highlight="viewer ?? undefined" :color="model === 'all' ? undefined : cats.find(c => c.key === model)?.color" />
           </n-card>
 
-          <n-card :bordered="false" class="block" size="small" id="persona">
+          <n-card v-if="model === 'all'" :bordered="false" class="block" size="small" id="persona">
             <template #header>
               <div class="card-head">
                 <CardTitle title="人员画像" :help="personaHelp" />
@@ -575,7 +675,7 @@ const detailMap = computed(() => {
                 <CardTitle :title="trendTitle" :help="trendHelp" />
               </div>
             </template>
-            <TrendChart :data="trendView.data" :personal="trendView.personal" :cats="cats" :user-daily="trendTooltipByDay" :by-user="byUserData" />
+            <TrendChart :data="trendView.data" :personal="trendView.personal" :single-model="trendView.singleModel" :cats="modelCats" :user-daily="trendTooltipByDay" :by-user="byUserData" />
           </n-card>
 
           <n-card v-if="!viewer" :bordered="false" class="block" size="small" id="rank">
@@ -597,6 +697,7 @@ const detailMap = computed(() => {
                 :user="selectedDaily.user"
                 :daily="selectedDaily.daily"
                 :cats="cats"
+                :model="model === 'all' ? undefined : model"
                 @close="selectedUser = null"
               />
             </Teleport>
@@ -608,7 +709,7 @@ const detailMap = computed(() => {
               <CardTitle title="个人分析" :help="personalHelp" />
             </div>
             <div class="pa-grid">
-              <div v-for="c in cats" :key="c.key" class="pa-card">
+              <div v-for="c in modelCats" :key="c.key" class="pa-card">
                 <div class="pa-sub">{{ c.label }} 分析</div>
                 <CompareChart :user="viewerName" :data="data" :model="c.key" :label="c.label" :color="c.color" />
               </div>
@@ -625,7 +726,7 @@ const detailMap = computed(() => {
         </div>
       </transition>
 
-      <SideNav :ready="!!data" :loading="loading" :personal="!!viewer" @refresh="query()" />
+      <SideNav :ready="!!data" :loading="loading" :personal="!!viewer" :model-all="model === 'all'" :single-day="isSingleDay" @refresh="query()" />
 
       <!-- 移动端：画像墙展开较多时，右下角浮动「收起」按钮（叠在侧导航 FAB 上方） -->
       <transition name="pcoll">

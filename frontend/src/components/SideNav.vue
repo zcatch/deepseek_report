@@ -2,20 +2,24 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { useSafeBottom } from "../useSafeBottom";
 
-const props = defineProps<{ ready: boolean; loading?: boolean; personal?: boolean }>();
+const props = defineProps<{ ready: boolean; loading?: boolean; personal?: boolean; modelAll?: boolean; singleDay?: boolean }>();
 
 const emit = defineEmits<{ (e: "refresh"): void }>();
 
 const { bottom: fabBottom } = useSafeBottom(20);
 
 // 个人视角下 rank 区块是「个人分析」两张图，导航文案跟着变
-const ITEMS = computed(() => [
-  { id: "kpi", label: "总览" },
-  { id: "scatter", label: "结构" },
-  { id: "persona", label: "画像" },
-  { id: "trend", label: "趋势" },
-  { id: "rank", label: props.personal ? "分析" : "排行" },
-]);
+const ITEMS = computed(() => {
+  const items = [
+    { id: "kpi", label: "总览" },
+    { id: "scatter", label: "结构" },
+  ];
+  // 模型筛选时画像整块隐藏，导航项也一并去掉
+  if (props.modelAll !== false) items.push({ id: "persona", label: "画像" });
+  items.push({ id: "trend", label: props.singleDay ? "对比" : "趋势" });
+  items.push({ id: "rank", label: props.personal ? "分析" : "排行" });
+  return items;
+});
 
 const activeId = ref("");
 const showBackTop = ref(false);

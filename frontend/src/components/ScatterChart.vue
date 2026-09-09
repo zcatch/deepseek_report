@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import * as echarts from "echarts";
 import { NEmpty } from "naive-ui";
 import { formatToken, formatCost } from "../format";
@@ -8,20 +8,28 @@ const props = defineProps<{
   points: { user: string; total: number; hitRate: string | null; cost: number; input: number; output: number; outputRatio: string | null }[];
   mode?: "io" | "hit";
   highlight?: string;
+  color?: string;
 }>();
 
 const el = ref<HTMLDivElement>();
 let chart: echarts.ECharts | null = null;
 
 // 高亮某用户：主题色 + 白色描边 + 放大 + 光晕（个人视角下在团队里定位他）
-const HIGHLIGHT = {
-  color: "#4f6ef7",
-  borderColor: "#fff",
-  borderWidth: 3,
-  opacity: 1,
-  shadowBlur: 14,
-  shadowColor: "rgba(79, 110, 247, 0.55)",
-};
+const HIGHLIGHT = computed(() => {
+  const color = props.color ?? "#4f6ef7";
+  const hex = color.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return {
+    color,
+    borderColor: "#fff",
+    borderWidth: 3,
+    opacity: 1,
+    shadowBlur: 14,
+    shadowColor: `rgba(${r}, ${g}, ${b}, 0.55)`,
+  };
+});
 
 function fmtAxis(v: number): string {
   const a = Math.abs(v);
@@ -47,7 +55,7 @@ function renderIo(narrow: boolean) {
   const data = props.points.map(p => ({
     name: p.user,
     value: [Math.max(p.input, 1), Math.max(p.output, 1), p.cost, p.outputRatio],
-    itemStyle: p.user === props.highlight ? HIGHLIGHT : undefined,
+    itemStyle: p.user === props.highlight ? HIGHLIGHT.value : undefined,
     symbolSize: p.user === props.highlight ? 26 : undefined,
   }));
   const xs = data.map(d => d.value[0]);
@@ -73,7 +81,7 @@ function renderIo(narrow: boolean) {
         type: "scatter",
         symbolSize: SYMBOL,
         data,
-        itemStyle: { color: "#5470c6", opacity: 0.7 },
+        itemStyle: { color: props.color ?? "#5470c6", opacity: 0.7 },
         label: { show: false },
         emphasis: EMPHASIS,
         markLine: {
@@ -94,7 +102,7 @@ function renderHit(narrow: boolean) {
   const data = props.points.map(p => ({
     name: p.user,
     value: [p.total, p.hitRate != null ? parseFloat(p.hitRate) : null, p.cost],
-    itemStyle: p.user === props.highlight ? HIGHLIGHT : undefined,
+    itemStyle: p.user === props.highlight ? HIGHLIGHT.value : undefined,
     symbolSize: p.user === props.highlight ? 26 : undefined,
   }));
 
@@ -115,7 +123,7 @@ function renderHit(narrow: boolean) {
         type: "scatter",
         symbolSize: SYMBOL,
         data,
-        itemStyle: { color: "#5470c6", opacity: 0.7 },
+        itemStyle: { color: props.color ?? "#5470c6", opacity: 0.7 },
         label: { show: false },
         emphasis: EMPHASIS,
       },

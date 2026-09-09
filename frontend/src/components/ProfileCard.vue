@@ -36,7 +36,7 @@ const hitColor = computed(() => hitRateColor(props.row.hitRate));
 const chips = computed(() => {
   const p = props.persona;
   const scaleColor = p.scale === "重度" ? "#7c5cff" : p.scale === "中度" ? "#4f6ef7" : "#a3b6ff";
-  const modelColor = p.model === "混用" ? "#909399" : "#4f6ef7";
+  const modelColor = p.model === "混用" ? "#909399" : (props.cats?.find(c => c.label === p.model)?.color ?? "#4f6ef7");
   const modeColor = p.mode === "读判" ? "#409eff" : p.mode === "生成" ? "#ff7d00" : "#909399";
   const effColor = p.eff === "省钱" ? "#18a058" : p.eff === "费钱" ? "#d03050" : "#f0a020";
   return [

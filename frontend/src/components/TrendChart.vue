@@ -3,11 +3,11 @@ import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import * as echarts from "echarts";
 import { NEmpty } from "naive-ui";
 import { formatToken } from "../format";
-import { CATEGORY_GRADIENTS } from "../api";
 
 const props = defineProps<{
   data: any[];
   personal?: boolean;
+  singleModel?: string;
   cats?: { key: string; label: string; color: string }[];
   userDaily?: Map<string, { user: string; tokens: number }[]>;
   byUser?: { user: string; tokens: number; cost: number; hitRate: string | null; models: Record<string, number> }[] | null;
@@ -53,7 +53,6 @@ function render() {
     const list = props.byUser;
     const totals = list.map(u => u.tokens);
     const series = catsList.map((c, ci) => {
-      const grad = CATEGORY_GRADIENTS[ci % CATEGORY_GRADIENTS.length];
       const data = list.map((u, ui) => {
         const val = u.models?.[c.key] ?? 0;
         // 判断该模型是否为这个人「最右侧非零」的段：决定右侧圆角与条尾总量标签
@@ -69,7 +68,7 @@ function render() {
           item.label = {
             show: true, position: "right", distance: 8,
             formatter: () => formatToken(totals[ui]),
-            fontSize: 12, fontWeight: 600, color: "#3e5ce6",
+            fontSize: 12, fontWeight: 600, color: c.color,
           };
         }
         return item;
@@ -79,8 +78,8 @@ function render() {
         data,
         itemStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: grad[0] },
-            { offset: 1, color: grad[1] },
+            { offset: 0, color: c.color },
+            { offset: 1, color: c.color + "99" },
           ]),
         },
         emphasis: { focus: "series", itemStyle: { shadowBlur: 10, shadowColor: "rgba(79, 110, 247, 0.35)" } },
@@ -115,6 +114,34 @@ function render() {
         axisTick: { show: false },
       },
       series,
+    }, true);
+    return;
+  }
+  // 模型筛选：单模型每日 token + 命中率（左轴 token，右轴命中率）
+  if (props.singleModel) {
+    const base = props.cats?.find(c => c.key === props.singleModel)?.color ?? "#4f6ef7";
+    chart.setOption({
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: any) => {
+          const idx = params?.[0]?.dataIndex ?? 0;
+          const d = props.data[idx];
+          if (!d) return "";
+          const lines = params.map((p: any) => `${p.marker}${p.seriesName}：${p.seriesName === "命中率" ? (p.value != null ? parseFloat(p.value).toFixed(1) + "%" : "—") : formatToken(p.value)}`).join("<br/>");
+          return `${d.day}<br/>${lines}`;
+        },
+      },
+      legend: { data: ["Token", "命中率"], top: 0 },
+      grid: narrow ? { left: 40, right: 48, top: 32, bottom: 22 } : { left: 64, right: 48, top: 40, bottom: 32 },
+      xAxis: { type: "category", boundaryGap: false, data: props.data.map((d: any) => d.day), axisLabel },
+      yAxis: [
+        { type: "value", axisLabel: { formatter: fmtTokenAxis, ...axisLabel }, splitLine: { lineStyle: { type: "dashed" } } },
+        { type: "value", min: 0, max: 100, axisLabel: { formatter: "{value}%", ...axisLabel } },
+      ],
+      series: [
+        { name: "Token", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.data.map((d: any) => d.tokens), itemStyle: { color: base }, lineStyle: { width: 2 } },
+        { name: "命中率", type: "line", yAxisIndex: 1, smooth: true, symbol: "triangle", symbolSize: 6, data: props.data.map((d: any) => (d.hitRate != null ? parseFloat(d.hitRate) : null)), itemStyle: { color: "#f0a020" }, lineStyle: { width: 2, type: "dashed" } },
+      ],
     }, true);
     return;
   }
@@ -184,7 +211,7 @@ function render() {
       },
     },
     legend: { data: legend, top: 0 },
-    grid: narrow ? { left: 40, right: 20, top: 32, bottom: 22 } : { left: 64, right: 24, top: 40, bottom: 32 },
+    grid: narrow ? { left: 40, right: 40, top: 32, bottom: 22 } : { left: 64, right: 48, top: 40, bottom: 32 },
     xAxis: { type: "category", boundaryGap: false, data: props.data.map((d: any) => d.day), axisLabel },
     yAxis: [
       { type: "value", splitLine: { lineStyle: { type: "dashed" } } },
@@ -209,7 +236,7 @@ onBeforeUnmount(() => {
   chart = null;
 });
 
-watch([() => props.data, () => props.personal, () => props.cats, () => props.userDaily, () => props.byUser], render, { deep: true });
+watch([() => props.data, () => props.personal, () => props.singleModel, () => props.cats, () => props.userDaily, () => props.byUser], render, { deep: true });
 </script>
 
 <template>
@@ -217,7 +244,7 @@ watch([() => props.data, () => props.personal, () => props.cats, () => props.use
     <div ref="el" class="chart" :class="{ hidden: !props.data.length }"></div>
     <div v-if="!props.data.length" class="empty"><n-empty :description="props.personal ? '暂无个人趋势数据' : '暂无费用趋势数据'" size="small" /></div>
     <div v-if="props.data.length" class="chart-foot">
-      {{ props.personal ? "单位：token" : "左轴 = 费用（元）· 右轴 = 命中率%" }}
+      {{ props.byUser?.length ? "纵轴：人员排行 · 横轴：token 消耗" : props.singleModel ? "左轴：token · 右轴：命中率%" : props.personal ? "单位：token" : "左轴：费用（元）· 右轴：命中率%" }}
     </div>
   </div>
 </template>

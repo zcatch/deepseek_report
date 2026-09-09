@@ -12,7 +12,7 @@ defineProps<{
     outputRatio: string | null;
     cost: number;
     hitRate: string | null;
-    models: { label: string; tokens: number; hitRate: string | null }[];
+    models: { label: string; color: string; tokens: number; hitRate: string | null }[];
   };
 }>();
 </script>
@@ -25,13 +25,13 @@ defineProps<{
     </div>
     <div class="ud-row"><span>占全员比例</span><span>{{ detail.share }}%</span></div>
     <div class="ud-row"><span>总 Token</span><span>{{ formatToken(detail.total) }}</span></div>
-    <div v-for="mc in detail.models" :key="mc.label" class="ud-row"><span>{{ mc.label }} Token</span><span>{{ formatToken(mc.tokens) }}</span></div>
+    <div v-for="mc in detail.models" :key="mc.label" class="ud-row"><span>{{ mc.label }} Token</span><span :style="{ color: mc.color }">{{ formatToken(mc.tokens) }}</span></div>
     <div class="ud-row"><span>输入 Token</span><span>{{ formatToken(detail.input) }}</span></div>
     <div class="ud-row"><span>输出 Token</span><span>{{ formatToken(detail.output) }}</span></div>
     <div class="ud-row"><span>输出占比</span><span :style="{ color: outputRatioColor(detail.outputRatio) }">{{ formatPercent(detail.outputRatio) }}</span></div>
     <div class="ud-row"><span>估算成本</span><span class="ud-cost">{{ formatCost(detail.cost) }}</span></div>
     <div class="ud-row"><span>综合命中率</span><span :style="{ color: hitRateColor(detail.hitRate) }">{{ formatHitRate(detail.hitRate) }}</span></div>
-    <div v-for="mc in detail.models" :key="mc.label" class="ud-row"><span>{{ mc.label }} 命中率</span><span :style="{ color: hitRateColor(mc.hitRate) }">{{ formatHitRate(mc.hitRate) }}</span></div>
+    <div v-for="mc in detail.models" :key="mc.label" class="ud-row"><span>{{ mc.label }} 命中率</span><span :style="{ color: mc.color }">{{ formatHitRate(mc.hitRate) }}</span></div>
   </div>
 </template>
 

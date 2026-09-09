@@ -10,13 +10,15 @@ date_default_timezone_set('Asia/Shanghai');
 // ── 配置（与 web/config.json 对齐，部署时可改） ──
 define('DS_API_BASE', 'https://platform.deepseek.com');
 define('DS_TZ', 28800);                                    // UTC+8 偏移秒
-// 模型 → 类别映射表（精确完整名匹配，忽略大小写/首尾空格）。
+// 模型 → 类别映射表（值存「系列签名」，忽略大小写/首尾空格）。
+// categorize() 会把模型名归一化：剥 `deepseek-` 前缀 + 剥版本号 `v4`/`v4.1`/`v5`，再精确匹配签名。
+// 于是 v4-flash / v4.1-flash / v5-flash 都命中 `flash`，模型升版本无需改代码。
 // 新增类别：在此加一类 + 下方 MODEL_LABELS 加一个展示名即可，前端自动遍历。
-// 未命中映射的模型归「other」类，前端在「其他」里暴露，补一行模型名即可收敛。
+// 未命中映射的模型归「other」类，前端在「其他」里暴露，补一行签名即可收敛。
 $GLOBALS['MODEL_MAP'] = [
-  'pro'    => ['deepseek-v4-pro'],
-  'flash'  => ['deepseek-v4-flash'],
-  'vision' => ['deepseek-v4-flash-vision-exp'],
+  'pro'    => ['pro'],
+  'flash'  => ['flash'],
+  'vision' => ['flash-vision-exp'],
 ];
 $GLOBALS['MODEL_LABELS'] = [
   'pro' => 'Pro', 'flash' => 'Flash', 'vision' => 'Vision', 'other' => '其他',
@@ -258,12 +260,16 @@ function parse_range($input, $now = null) {
 }
 
 // ── 聚合（等价 core/aggregate.ts） ──
-// 精确完整名匹配：模型名（忽略大小写/首尾空格）完全等于映射表里的名才命中，否则归 other
+// 归类：先把模型名归一化（剥 `deepseek-` 前缀 + 剥版本号 v4/v4.1/v5），
+// 再与映射表里的「系列签名」精确相等匹配（忽略大小写/首尾空格），未命中归 other。
+// 归一化只剥离版本号，不做关键词/前缀匹配，flash 与 flash-vision-exp 仍严格区分。
 function categorize($model, $map) {
   $m = strtolower(trim((string)$model));
+  $sig = preg_replace('/^deepseek-/', '', $m);
+  $sig = preg_replace('/^v\d+(\.\d+)*-/', '', $sig);
   foreach ($map as $cat => $names) {
     foreach ($names as $name) {
-      if ($m === strtolower(trim((string)$name))) return $cat;
+      if ($sig === strtolower(trim((string)$name))) return $cat;
     }
   }
   return 'other';
@@ -429,10 +435,15 @@ function buildJson($range) {
   foreach ($agg['duL'] as $x) {
     $nm = $x['n'];
     if (!isset($dailyAgg[$nm])) $dailyAgg[$nm] = [];
-    if (!isset($dailyAgg[$nm][$x['d']])) $dailyAgg[$nm][$x['d']] = ['models' => [], 'ch' => 0.0, 'cm' => 0.0, 'cost' => 0.0];
+    if (!isset($dailyAgg[$nm][$x['d']])) $dailyAgg[$nm][$x['d']] = ['models' => [], 'mch' => [], 'mcm' => [], 'ch' => 0.0, 'cm' => 0.0, 'cost' => 0.0];
     $e = &$dailyAgg[$nm][$x['d']];
     if (!isset($e['models'][$x['cat']])) $e['models'][$x['cat']] = 0.0;
     $e['models'][$x['cat']] += $x['tokens'];
+    // 分模型缓存命中/未命中：模型筛选后趋势图单独展示某模型命中率用
+    if (!isset($e['mch'][$x['cat']])) $e['mch'][$x['cat']] = 0.0;
+    if (!isset($e['mcm'][$x['cat']])) $e['mcm'][$x['cat']] = 0.0;
+    $e['mch'][$x['cat']] += $x['ch'];
+    $e['mcm'][$x['cat']] += $x['cm'];
     $e['ch'] += $x['ch']; $e['cm'] += $x['cm'];
     $e['cost'] += $x['cost'];
     unset($e);
@@ -442,7 +453,7 @@ function buildJson($range) {
     ksort($dm);
     $daily = [];
     foreach ($dm as $day => $e) {
-      $daily[] = ['day' => fd($day), 'models' => $e['models'], 'cost' => round2($e['cost']), 'hitRate' => hitRate($e['ch'], $e['cm'])];
+      $daily[] = ['day' => fd($day), 'models' => $e['models'], 'modelCh' => $e['mch'], 'modelCm' => $e['mcm'], 'cost' => round2($e['cost']), 'hitRate' => hitRate($e['ch'], $e['cm'])];
     }
     $perUser[$name]['daily'] = $daily;
   }

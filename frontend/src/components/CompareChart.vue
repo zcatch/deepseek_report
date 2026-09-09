@@ -141,7 +141,7 @@ function render() {
       type: "value",
       min: -maxAbs,
       max: maxAbs,
-      axisLabel: { formatter: "{value}%", fontSize: narrow ? 10 : 12 },
+      axisLabel: { formatter: (v: number) => `${Math.round(v)}%`, fontSize: narrow ? 10 : 12 },
       splitLine: { lineStyle: { type: "dashed" } },
     },
     yAxis: { type: "category", data: list.map(i => i.label), axisLabel: { fontSize: narrow ? 11 : 12, color: "#525a6e" } },

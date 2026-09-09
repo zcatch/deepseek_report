@@ -6,8 +6,9 @@ import { formatToken, formatCost } from "../format";
 
 const props = defineProps<{
   user: string;
-  daily: { day: string; models: Record<string, number>; cost: number; hitRate: string | null }[];
+  daily: { day: string; models: Record<string, number>; modelCh?: Record<string, number>; modelCm?: Record<string, number>; cost: number; hitRate: string | null }[];
   cats?: { key: string; label: string; color: string }[];
+  model?: string;
 }>();
 
 const emit = defineEmits<{ (e: "close"): void }>();
@@ -30,8 +31,43 @@ function render() {
   // auto 抽稀：数据点多时保留间隔日期，不用 hideOverlap（会全隐藏）
   const axisLabel = { fontSize: labelSize, interval: "auto" };
   const grid = narrow
-    ? { left: 40, right: 20, top: 32, bottom: 22 }
-    : { left: 64, right: 24, top: 40, bottom: 32 };
+    ? { left: 40, right: 40, top: 32, bottom: 22 }
+    : { left: 64, right: 48, top: 40, bottom: 32 };
+
+  // 模型筛选：只展示该模型 token + 该模型命中率
+  if (props.model) {
+    const m = props.model;
+    const label = (props.cats ?? []).find(c => c.key === m)?.label ?? m;
+    const color = (props.cats ?? []).find(c => c.key === m)?.color ?? "#4f6ef7";
+    chart.setOption({
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: any) => {
+          const idx = params?.[0]?.dataIndex ?? 0;
+          const d = props.daily[idx];
+          if (!d) return "";
+          const lines = params.map((p: any) => `${p.marker}${p.seriesName}：${p.seriesName === "命中率" ? (p.value != null ? parseFloat(p.value).toFixed(1) + "%" : "—") : formatToken(p.value)}`).join("<br/>");
+          return `${d.day}<br/>${lines}`;
+        },
+      },
+      legend: { data: [`${label} Token`, "命中率"], top: 0 },
+      grid,
+      xAxis: { type: "category", boundaryGap: false, data: props.daily.map(d => d.day), axisLabel },
+      yAxis: [
+        { type: "value", axisLabel: { formatter: fmtAxis, fontSize: labelSize }, splitLine: { lineStyle: { type: "dashed" } } },
+        { type: "value", min: 0, max: 100, axisLabel: { formatter: "{value}%", fontSize: labelSize } },
+      ],
+      series: [
+        { name: `${label} Token`, type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: props.daily.map(d => d.models?.[m] ?? 0), itemStyle: { color }, lineStyle: { width: 2 } },
+        { name: "命中率", type: "line", yAxisIndex: 1, smooth: true, symbol: "triangle", symbolSize: 6, data: props.daily.map(d => {
+          const ch = d.modelCh?.[m] ?? 0;
+          const cm = d.modelCm?.[m] ?? 0;
+          return ch + cm > 0 ? parseFloat(((ch / (ch + cm)) * 100).toFixed(1)) : null;
+        }), itemStyle: { color: "#f0a020" }, lineStyle: { width: 2, type: "dashed" } },
+      ],
+    }, true);
+    return;
+  }
 
   chart.setOption({
     tooltip: {
@@ -71,7 +107,7 @@ onBeforeUnmount(() => {
   chart?.dispose();
   chart = null;
 });
-watch(() => [props.daily, props.cats], render, { deep: true });
+watch(() => [props.daily, props.cats, props.model], render, { deep: true });
 </script>
 
 <template>
@@ -83,7 +119,7 @@ watch(() => [props.daily, props.cats], render, { deep: true });
     </div>
     <div v-if="daily.length" ref="el" class="chart"></div>
     <div v-else class="empty"><n-empty description="暂无该用户趋势数据" size="small" /></div>
-    <div v-if="daily.length" class="chart-foot">左轴 = token · 右轴 = 命中率%</div>
+    <div v-if="daily.length" class="chart-foot">左轴：token · 右轴：命中率%</div>
   </div>
 </template>
 

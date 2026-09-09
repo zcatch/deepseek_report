@@ -73,6 +73,8 @@ export interface TrendPoint {
 export interface PerUserDaily {
   day: string;
   models: Record<string, number>;
+  modelCh: Record<string, number>;
+  modelCm: Record<string, number>;
   cost: number;
   hitRate: string | null;
 }

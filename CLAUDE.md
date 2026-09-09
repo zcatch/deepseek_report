@@ -22,7 +22,7 @@ deepseek_report/
 
 **1. 单价 `pr` 是反推出来的。** DeepSeek 的 amount 接口给 token、cost 接口给金额，都按 (用户|模型|天) 分桶。代码把 `pr = 该组 cost ÷ 该组总 token`，于是 `Σ(amt × pr)` 恰好等于该组实际扣费——所以「估算成本」在分组层面等于实际扣费，差额只来自四舍五入。别把 `pr` 当成官方定价表里的单价。
 
-**2. 模型分类是配置驱动的映射表，不是二分。** `$GLOBALS['MODEL_MAP']` 是「类别 → 完整模型名数组」的映射，判定 `categorize()` 精确完整名匹配（忽略大小写/首尾空格），未命中映射的模型归 `other` 类；`$GLOBALS['MODEL_LABELS']` 给每个类别一个展示名。新增第 N 类：只在 `MODEL_MAP` 加一类 + `MODEL_LABELS` 加展示名，后端按 `categories` 数组输出、前端遍历渲染，**前端零改动**。`other` 类在榜单上暴露漏配的模型，补一行模型名即可收敛。⚠ 用关键词/前缀匹配会误配：`deepseek-v4-flash-vision-exp` 同时含 `flash`、且与 `deepseek-v4-flash` 共享前缀，只有精确完整名能正确区分 flash 与 vision。
+**2. 模型分类是配置驱动的映射表，不是二分。** `$GLOBALS['MODEL_MAP']` 是「类别 → 系列签名数组」的映射；`categorize()` 先把模型名归一化（剥 `deepseek-` 前缀 + 剥版本号 `v4`/`v4.1`/`v5`），再与签名**精确相等**匹配（忽略大小写/首尾空格），未命中归 `other` 类。于是 `v4-flash` / `v4.1-flash` / `v5-flash` 都命中 `flash`，模型升版本无需改代码。`$GLOBALS['MODEL_LABELS']` 给每个类别一个展示名。新增第 N 类：只在 `MODEL_MAP` 加一类 + `MODEL_LABELS` 加展示名，后端按 `categories` 数组输出、前端遍历渲染，**前端零改动**。`other` 类在榜单上暴露漏配的模型，补一行签名即可收敛。⚠ 用关键词/前缀匹配会误配：`deepseek-v4-flash-vision-exp` 同时含 `flash`、且与 `deepseek-v4-flash` 共享前缀；归一化后仍按签名精确相等匹配，flash 与 vision 严格区分（签名分别是 `flash` 与 `flash-vision-exp`）。⚠ 归一化假设官方命名稳定遵循 `deepseek-{版本}-{系列}` 规律，若未来起名偏离（如 vision 改名），会退回 `other`，届时看「其他」补签名即可收敛。
 
 其他口径：`REQUEST` 字段是请求次数不是 token，被忽略；命中率/输出占比在分母为 0 时返回 `null`，前端渲染成 `—`；日期分桶用 UTC（`gmdate`），查询参数带 `tz=28800` 交给服务端偏移。**DeepSeek 当天用量有约 8 小时滞后**：当天查看任何含「今天」的范围，晚些小时的用量还没进平台、数字会偏少，属平台正常延迟，非代码 bug。
 
