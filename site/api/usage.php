@@ -15,13 +15,14 @@ define('DS_TZ', 28800);                                    // UTC+8 偏移秒
 // 于是 v4-flash / v4.1-flash / v5-flash 都命中 `flash`，模型升版本无需改代码。
 // 新增类别：在此加一类 + 下方 MODEL_LABELS 加一个展示名即可，前端自动遍历。
 // 未命中映射的模型归「other」类，前端在「其他」里暴露，补一行签名即可收敛。
+// Vision 已不再独立：能力由 Flash 承接（2026-10 起 vision 模型停用），
+// 因此把 `flash-vision-exp` 并入 flash，历史 8/9 月的 vision 用量仍计入 Flash。
 $GLOBALS['MODEL_MAP'] = [
   'pro'    => ['pro'],
-  'flash'  => ['flash'],
-  'vision' => ['flash-vision-exp'],
+  'flash'  => ['flash', 'flash-vision-exp'],
 ];
 $GLOBALS['MODEL_LABELS'] = [
-  'pro' => 'Pro', 'flash' => 'Flash', 'vision' => 'Vision', 'other' => '其他',
+  'pro' => 'Pro', 'flash' => 'Flash', 'other' => '其他',
 ];
 $GLOBALS['COST_UNIT'] = 'CNY';
 $GLOBALS['COST_PRECISION'] = 2;
@@ -262,7 +263,7 @@ function parse_range($input, $now = null) {
 // ── 聚合（等价 core/aggregate.ts） ──
 // 归类：先把模型名归一化（剥 `deepseek-` 前缀 + 剥版本号 v4/v4.1/v5），
 // 再与映射表里的「系列签名」精确相等匹配（忽略大小写/首尾空格），未命中归 other。
-// 归一化只剥离版本号，不做关键词/前缀匹配，flash 与 flash-vision-exp 仍严格区分。
+// 归一化只剥离版本号，不做关键词/前缀匹配；flash-vision-exp 作为独立签名并入 flash。
 function categorize($model, $map) {
   $m = strtolower(trim((string)$model));
   $sig = preg_replace('/^deepseek-/', '', $m);

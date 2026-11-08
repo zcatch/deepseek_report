@@ -2,7 +2,7 @@
 export const CATEGORY_COLORS = [
   "#5b8df0", // 浅蓝（Pro）
   "#4bc899", // 薄荷（Flash）
-  "#ee8cbd", // 浅粉（Vision）
+  "#ee8cbd", // 浅粉
   "#c4b5fd", // 浅紫
   "#fde68a", // 浅黄
   "#fda4af", // 浅玫瑰
@@ -16,7 +16,7 @@ export const CATEGORY_COLORS = [
 export const CATEGORY_GRADIENTS: [string, string][] = [
   ["#5b8df0", "#8bb4e8"], // Pro 浅蓝→更浅蓝
   ["#4bc899", "#7bd0ac"], // Flash 薄荷→更浅薄荷
-  ["#ee8cbd", "#f0aed0"], // Vision 浅粉→更浅粉
+  ["#ee8cbd", "#f0aed0"], // 浅粉→更浅粉
   ["#c4b5fd", "#ddd6fe"],
   ["#fde68a", "#fef3c7"],
   ["#fda4af", "#fecdd3"],

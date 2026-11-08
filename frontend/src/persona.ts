@@ -2,7 +2,7 @@ import type { RankTotal, Category } from "./api";
 
 // 人员画像：四维标签，全部由 rankTotal 现有字段推导，无后端改动
 export type Scale = "重度" | "中度" | "轻度";
-export type ModelPref = string; // 类别展示名（Pro/Flash/Vision/其他）或 "混用"
+export type ModelPref = string; // 类别展示名（Pro/Flash/其他）或 "混用"
 export type UseMode = "读判" | "生成" | "均衡";
 export type Efficiency = "省钱" | "持平" | "费钱";
 
